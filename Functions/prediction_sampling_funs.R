@@ -133,7 +133,8 @@ physical_prop_uns_funs <- function(mu_gp, var_gp, n_funs, tension = "T"){
 
 physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
                                         cof_level= 0.05, 
-                                        rseed = 1){
+                                        rseed = 1,
+                                        pred_type = "mean"){
   #coefs gp are log strain, other coefs
   
   if(is.null(dim(mu_gp))) mu_gp <- matrix(mu_gp, nrow = 1)
@@ -143,12 +144,18 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
   
   # % Elongation
   zq <- qnorm(1 - cof_level/2)
-  el_mu <- exp(mu_gp[,1] + var_gp[,1]/2)
+  if(pred_type == "mean"){
+    el_mu <- exp(mu_gp[,1] + var_gp[,1]/2)
+  }else{
+    el_mu <- exp(mu_gp[,1]) #median
+  }
+  
   el_ub <- exp(mu_gp[,1] +sd_gp[,1] *zq)
   el_lb <- exp(mu_gp[,1] - sd_gp[,1] * zq)
   
   
   ## max/fracture Strength
+  # mean and median are the same, so no changes
   b_coefs <- t(compute_coefs_leg_bf(n_funs))
   fs_v <- b_coefs %*% rep(1,n_funs)
   fs_mu <- mu_gp[,-1]%*%fs_v
@@ -157,7 +164,7 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
   fs_lb <- fs_mu - fs_sd * zq
   
   
-  ## Young's module and thoughness
+  ## Young's module and toughness
   zs <- rnorm(n_samples * ncol(mu_gp))
   zs <- matrix(zs, nrow = n_samples,
                ncol = ncol(mu_gp))
@@ -168,6 +175,9 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
   
   der_v <- 0:(n_funs - 1) * 0.01^(c(0,0:(n_funs - 2)))
   
+  pred_fun <- mean
+  
+  if(pred_type != "mean") pred_fun <- median
   
   for( i in 1:n_alloys){
     X <- (zs %r*% sd_gp[i,]) %r+% mu_gp[i,] 
@@ -176,7 +186,7 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
     xig <- X[,2]*X[,1]
     #xig <- xig[xig > 0]
     
-    th_mu[i] <- mean(xig)
+    th_mu[i] <- pred_fun(xig)
     thq <- quantile(xig, probs= c(cof_level/2,
                                   1- cof_level/2))
     th_lb[i] <- thq[1]
@@ -189,7 +199,7 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
     }
     #xig <- xig[xig > 0]
     xig <- xig[!is.na(xig)]
-    ym_mu[i] <- mean(xig)
+    ym_mu[i] <- pred_fun(xig)
     ymq <- quantile(xig, probs= c(cof_level/2, 
                                   1- cof_level/2))
     ym_lb[i] <- ymq[1]
@@ -198,7 +208,7 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
   
   
   
-  out_mean <- tibble(ultimate_stress = as.vector(fs_mu),
+  out_pred <- tibble(ultimate_stress = as.vector(fs_mu),
                      ultimate_strain = as.vector(el_mu),
                      toughness = as.vector(th_mu),
                      young_mod = as.vector(ym_mu))
@@ -213,7 +223,7 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
                    toughness = as.vector(th_ub),
                    young_mod = as.vector(ym_ub))
   
-  return(list(mean = out_mean,
+  return(list(pred = out_pred,
               lb = out_lb,
               ub = out_ub))
   

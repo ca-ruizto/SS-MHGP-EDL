@@ -1265,7 +1265,8 @@ import_predict_mod_gp_sampling_fun <- function(newX,Xdesign,
                                           n_funs = 4,
                                           n_samples = 1e3, cof_level= 0.05,
                                           rseed = 1,
-                                          prop_names){
+                                          prop_names,
+                                          pred_type = "mean"){
   if(!is.null(file_path)) load(file_path)
   if(is.null(nrow(newX))) newX <- matrix(newX,nrow =1)
   
@@ -1304,7 +1305,8 @@ import_predict_mod_gp_sampling_fun <- function(newX,Xdesign,
                                      n_funs = n_funs, 
                                      n_samples = n_samples,
                                      cof_level= cof_level, 
-                                     rseed = rseed)
+                                     rseed = rseed,
+                                     pred_type = pred_type)
   colnames(gp_mu) <- prop_names
   colnames(gp_var) <- prop_names
   colnames(gp_nug) <- prop_names
@@ -1325,8 +1327,8 @@ import_predict_mod_gp_sampling_fun <- function(newX,Xdesign,
            Test = test_type)
   
   mp_mean <- as_tibble(Xdesign)%>%
-    bind_cols(mp_preds$mean)%>%
-    mutate(Type = "Mean",
+    bind_cols(mp_preds$pred)%>%
+    mutate(Type = "Pred",
            Step = step_id,
            id_obs = row_number(),
            Test = test_type)
@@ -1366,14 +1368,16 @@ predict_mod_gp_sampling_fun <- function(Xdesign,
                                             n_funs = 4,
                                             test_type = "Tension", step_id = 1,
                                             n_samples = 1e3, cof_level= 0.05,
-                                            rseed = 1,prop_names){
+                                            rseed = 1,prop_names,
+                                        pred_type = "mean"){
   
   mp_preds <- physical_prop_sampling_funs(mu_gp = gp_mu,
                                           var_gp = gp_var,
                                           n_funs = n_funs, 
                                           n_samples = n_samples,
                                           cof_level= cof_level, 
-                                          rseed = rseed)
+                                          rseed = rseed,
+                                          pred_type = pred_type)
   colnames(gp_mu) <- prop_names
   colnames(gp_var) <- prop_names
   
@@ -1388,8 +1392,8 @@ predict_mod_gp_sampling_fun <- function(Xdesign,
            Test = test_type)
   
   mp_mean <- as_tibble(Xdesign)%>%
-    bind_cols(mp_preds$mean)%>%
-    mutate(Type = "Mean",
+    bind_cols(mp_preds$pred)%>%
+    mutate(Type = "Pred",
            Step = step_id,
            id_obs = row_number(),
            Test = test_type)

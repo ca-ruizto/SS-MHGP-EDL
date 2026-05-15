@@ -355,6 +355,8 @@ dat_mu <- dat_lb <- dat_ub <- dat_var <- dat_nug <- dat_pm <- vector(mode = "lis
 
 mods <- c("Tension", "Compression")
 
+pred_type = "median" # mean or median
+
 k <- 0
 impse_dat <- vector(mode = "list")
 
@@ -385,7 +387,8 @@ for(mt in mean_type){
                                                  rseed = 1323,
                                                  n_funs = length(properties) - 1,
                                                  n_samples = 1e4,
-                                                 prop_names = properties)
+                                                 prop_names = properties,
+                                                 pred_type = pred_type)
            
            #pareto_mean <- pareto_scores_prop_fun(as.matrix(results$mp_preds$mean))
         
@@ -475,7 +478,8 @@ for(mt in mean_type){
                                                  rseed = 1323,
                                                  n_funs = length(properties) - 1,
                                                  n_samples = 1e4,
-                                                 prop_names = properties)
+                                                 prop_names = properties,
+                                                 pred_type = pred_type)
            
            #pareto_mean <- pareto_scores_prop_fun(as.matrix(results$mp_preds$mean))
         
@@ -809,7 +813,8 @@ res_nn_t <- predict_mod_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt"
                                            rseed = 1323,
                                            n_funs = length(properties) - 1,
                                            n_samples = 1e4,
-                                           prop_names = properties)
+                                           prop_names = properties,
+                                                 pred_type = pred_type)
 
 res_nn_c <- predict_mod_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt")],
                                             gp_mu = gp_mu_nn_c,
@@ -819,7 +824,8 @@ res_nn_c <- predict_mod_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt"
                                            rseed = 1323,
                                            n_samples = 1e4,
                                            n_funs = length(properties) - 1,
-                                           prop_names = properties)
+                                           prop_names = properties,
+                                                 pred_type = pred_type)
 ```
 
 
