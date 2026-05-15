@@ -1,0 +1,529 @@
+---
+title: "Optimizing mechanical properties"
+output: 
+  pdf_document: 
+    keep_tex: true
+date: "2024-12-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      dev = "png",
+                      dpi = 300)
+
+library(tidyverse)
+library(ggnewscale)
+library(AlgDesign)
+theme_set(theme_bw()+
+            theme(text=element_text(size = 14),
+                  legend.box.margin = margin(-10,-10,-10,-10),
+                  legend.position = "none",
+                  legend.text = element_text(size=12)))
+library(mgcv)
+library(gridExtra)
+library(nloptr)
+library(latex2exp)
+library(collapse)
+library(lme4)
+library(Matrix)
+library(parallel)
+```
+
+
+## To DO
+
+- Change the kernel to be on the concentration and add a linear mean
+- Update the optimization search to be done on the angle space
+- Maybe do GP on the sphere later
+
+
+## Import Data and Initial Set Up
+
+```{r}
+metals <- c("Mo","Nb","Ta","V","W")
+properties <- c("log_max_strain",
+                "bc_1","bc_2","bc_3","bc_4")
+n_prop <- length(properties)
+n_dim <- length(metals)
+
+
+
+dat_ss_c <- rio::import(here::here("Results",
+                                 "ss_all_ort_coefs_c_uns.csv"))
+
+dat_ss_c <- as_tibble(dat_ss_c)
+
+dat_ss_c <- dat_ss_c%>%
+            filter(!(alloy %in% metals))%>%
+            mutate(id_row = row_number())
+
+dat_ss_t <- rio::import(here::here("Results",
+                                 "ss_all_ort_coefs_t_uns.csv"))
+
+dat_ss_t <- as_tibble(dat_ss_t)
+
+dat_ss_t <- dat_ss_t%>%
+            filter(!(alloy %in% metals))%>%
+            mutate(id_row = row_number())
+
+
+```
+
+
+```{r}
+source(here::here("Functions",
+                    "mv_imspe_funs.R"))
+
+source(here::here("Functions",
+                    "kernel_funs.R"))
+
+source(here::here("Functions",
+                    "coords_tranform_funs.R"))
+
+source(here::here("Functions",
+                    "prediction_sampling_funs.R"))
+
+source(here::here("Functions",
+                    "orth_basis_funs.R"))
+
+source(here::here("Functions",
+                    "rm_mvgps_mat_mu_pred_functions.R"))
+```
+
+
+
+### Modify into sets
+
+```{r}
+dat_ss_all <- dat_ss_t%>%
+                filter(!(alloy %in% metals))%>%
+                mutate(type = "t")%>%
+                bind_rows(dat_ss_c%>%
+                            mutate(type ="c"))%>%
+                unite("alloy_id",
+                      Mo:W,remove = FALSE)%>%
+                arrange(alloy_id, rep, type)#%>%
+                  #filter(! alloy %in% metals)
+
+dat_ss_fil <- dat_ss_all%>%
+              ungroup()%>%
+              group_by(alloy_id)%>%
+              arrange(desc(rep))%>%
+              slice_head(n=1)
+```
+
+
+
+
+### Parameters
+
+```{r}
+joint_cov <- het_sv <-joint_ls_gp <- F
+max_train_iters <- 10
+scale_vars <- "after"
+al_steps <- 6
+exp_name <- "train_binodd_mat32_25-04-25"
+ini_seed <- 233545
+np_seed <- 12143
+verbose <- F
+pen_par <- F
+n_order <- 3
+ini_prev_mod <- T
+cov_type = "Matern3_2" #"Gaussian", "Matern5_2", "Matern3_2"
+
+
+cor_fun_test <- function(theta, D_mat) general_cor_fun(theta = theta,
+                                                       D_mat = D_mat,
+                                                       kernel_fun = matern_3_2_fun)
+```
+
+
+
+## AL algorithm
+
+```{r}
+dat_ss_fil <- dat_ss_fil%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))
+  
+```
+
+```{r}
+  ## Training
+
+set.seed(np_seed)
+
+
+temp <- dat_ss_fil%>%
+  ungroup()%>%
+  filter(elements == 2,
+         round(pmax(Mo,Nb,Ta,V,W),1) %in% c(0.1,0.3,0.5,0.7,0.9) 
+         )%>%
+  bind_rows(dat_ss_fil%>%
+  ungroup()%>%
+  filter(elements == 3))%>%
+  arrange(alloy_cnt)
+
+
+
+#temp <- temp[-which(temp$alloy_cnt == 59),] #59 is the quanary with x =0.2 for all elements
+
+
+id_train <- temp$alloy_cnt
+
+
+
+dat_ss_train <- dat_ss_fil%>%
+      filter((alloy_cnt %in% id_train))%>%
+  arrange(alloy_cnt)
+
+
+
+dat_train <- dat_ss_all%>%
+      filter(alloy_cnt %in% id_train)%>%
+      arrange(alloy_cnt)%>%
+                  pivot_longer(cols = all_of(properties),
+                               names_to = "property",
+                               values_to = "val_true")
+
+dat_train_B <- dat_train%>%
+    group_by(alloy_cnt, rep)%>%
+  slice_head(n=1)
+    
+dat_train_c <- dat_train%>%
+      filter(type == "c")
+    
+dat_train_t <- dat_train%>%
+      filter(type == "t")
+```
+
+
+```{r}
+x_knots <- seq(0,1, length.out = n_order)
+
+knot_list <- lapply(1:5, function(i) x_knots)
+
+prop_b <- properties
+prop_b[1] <- "lms"
+  
+Basis_X <- create_mv_basis_fun(as.matrix(dat_ss_train[,metals]),
+                                   n_out = n_prop,
+                               type = "bs",
+                                   prop_names = prop_b,
+                                    knots_list = knot_list,
+                                   sparse_mat = T,
+                               func_intercept = F,
+                               omit_last_var = T,
+                                   var_names = metals)
+  
+Basis_X_all <- create_mv_basis_fun(as.matrix(dat_train_B[,metals]),
+                                   n_out = n_prop,
+                                   type = "bs",
+                                   func_intercept = F,
+                                   prop_names = prop_b,
+                                   knots_list = knot_list,
+                                   omit_last_var = T,
+                                   sparse_mat = T,
+                                   var_names = metals)
+    
+y_train_c <- as.vector(dat_train_c$val_true)
+Y_train_c <- matrix(y_train_c,
+                        ncol = n_prop,
+                        byrow = T)
+    
+y_train_t <- as.vector(dat_train_t$val_true)
+    
+Y_train_t <- matrix(y_train_t,
+                        ncol = n_prop,
+                        byrow = T)
+    
+a_reps <- dat_ss_all%>%
+      arrange(alloy_cnt)%>%
+      filter((alloy_cnt %in% id_train))%>%
+                ungroup()%>%
+                group_by(alloy_cnt)%>%
+                tally()
+    
+a_reps <- a_reps$n/2
+
+X_train <- as.matrix(dat_ss_train[,metals])
+```
+
+
+
+```{r}
+Basis_X <- create_poly_basis(as.matrix(dat_ss_train[,metals]),
+                                   n_out = n_prop,
+                                   prop_names = prop_b,
+                                   sparse_mat = T,
+                               degree = 1,
+                               omit_last_var = T,
+                                   var_names = metals)
+  
+Basis_X_all <- create_poly_basis(as.matrix(dat_train_B[,metals]),
+                                   n_out = n_prop,
+                                   prop_names = prop_b,
+                                   sparse_mat = T,
+                               degree = 1,
+                               omit_last_var = T,
+                                   var_names = metals)
+
+Basis_X <- Basis_X_all <- NULL
+```
+
+
+```{r}
+set.seed(ini_seed)
+  
+  file_name <- paste0(exp_name,"_models_all",".RData")
+  file_path <- here::here("Results","Fixed Data",file_name)
+  if(file.exists(file_path)){
+    load(file_path)
+  }else{
+    ## Training
+    
+    #PX
+    
+    test_pX_bin <- gen.mixture(levels = 3,
+                  vars = metals)
+    
+    idp <- which(sapply(1:nrow(test_pX_bin), 
+                        function(i) max(test_pX_bin[i,]) == 1 ))
+    test_pX_bin <- as.matrix(test_pX_bin[-idp,])
+    
+    test_pX <- gen.mixture(levels = 4,
+                  vars = metals)
+    test_pX <- rbind(as.matrix(test_pX),
+                     test_pX_bin)
+    idp <- which(sapply(1:nrow(test_pX), function(i) max(test_pX[i,]) == 1 ))
+    
+    pX_edge <- test_pX[idp,]
+    
+    test_pXB <- rbind(test_pX[-idp,],
+                     test_pX[idp,])
+    test_pX <- test_pX[-idp,]
+    
+    n_ed <- length(metals)
+    
+    #homogeneous solution
+    result_stats_c <- compute_mean_var_fun(Y = Y_train_c,
+                                     a_mult = a_reps,
+                                     rescale_y = scale_vars)
+
+    ini_hom_c <- ini_pars_hom_fun(result_stats_c, 
+                                  n_dim = n_dim,
+                                  log_bounds = log(c(1e-2,5,50)))
+    
+    
+    mod_hom_c <- fit_mvgp_sv_fun(Y = Y_train_c,
+                            X = X_train,
+                            X_pred = Basis_X,
+                            X_pred_all = Basis_X_all,
+                            a_mult = a_reps,
+                            cor_fun = cor_fun_test,
+                            joint_cov = joint_cov,
+                            het_sv = F,
+                            lb = ini_hom_c$lb,
+                            ub = ini_hom_c$ub,
+                            ini_pars = ini_hom_c$ini,
+                            joint_ls_gp = joint_ls_gp,
+                            max_it =max_train_iters,
+                            rescale_y = scale_vars,
+                            rs = result_stats_c,
+                            verbose = verbose)
+    
+    eval_log_c <- fit_mvgp_sv_fun(Y = Y_train_c,
+                        X = X_train,
+                        X_pred = Basis_X,
+                            X_pred_all = Basis_X_all,
+                        a_mult = a_reps,
+                        cor_fun = cor_fun_test,
+                        joint_cov = joint_cov,
+                        het_sv = F,
+                        ini_pars = mod_hom_c$opt_sol$solution,
+                        joint_ls_gp = joint_ls_gp,
+                        opt = F,
+                        rescale_y = scale_vars,
+                            verbose = verbose)
+    
+    
+    result_stats_t <- compute_mean_var_fun(Y = Y_train_t,
+                                     a_mult = a_reps,
+                                     rescale_y = scale_vars)
+
+    ini_hom_t <- ini_pars_hom_fun(result_stats_t,
+                                  n_dim = n_dim,
+                                  log_bounds = log(c(1e-2,5,50)))
+    
+    mod_hom_t <- fit_mvgp_sv_fun(Y = Y_train_t,
+                            X = X_train,
+                            X_pred = Basis_X,
+                            X_pred_all = Basis_X_all,
+                            a_mult = a_reps,
+                            cor_fun = cor_fun_test,
+                            joint_cov = joint_cov,
+                            het_sv = F,
+                            lb = ini_hom_t$lb,
+                            ub = ini_hom_t$ub,
+                            ini_pars = ini_hom_t$ini,
+                            joint_ls_gp = joint_ls_gp,
+                            rescale_y = scale_vars,
+                            rs = result_stats_t,
+                            verbose = verbose)
+    
+    
+    eval_log_t <- fit_mvgp_sv_fun(Y = Y_train_t,
+                            X = X_train,
+                            X_pred = Basis_X,
+                            X_pred_all = Basis_X_all,
+                            a_mult = a_reps,
+                            cor_fun = cor_fun_test,
+                            joint_cov = joint_cov,
+                            het_sv = F,
+                            ini_pars = mod_hom_t$opt_sol$solution,
+                            joint_ls_gp = joint_ls_gp,
+                            max_it =max_train_iters,
+                            opt = F,
+                            rescale_y = scale_vars,
+                            verbose = verbose)
+    
+    ### Heterogeneous solution
+    
+    message("Heterogeneous Tension")
+    message(Sys.time())
+  
+    pen_par <- F
+    am_px <- rep(1,nrow(test_pXB))
+    nrPx <- nrow(test_pXB)
+    nrt <- nrow(X_train)
+    
+    idx_1 <- which(duplicated(rbind(test_pXB,X_train)))
+    idx_2 <- which(duplicated(rbind(X_train, test_pXB)))
+    am_px[idx_2 - nrt] <- a_reps[idx_1 - nrPx]
+    
+    
+    ini_sol_t <- pars_hom_to_het_reg(mod_hom_t$opt_sol$solution,
+                               n_properties = n_prop,
+                               pX = test_pX,
+                               X = X_train,
+                               edge_locs = pX_edge,
+                               var_mat = result_stats_t$var_mat,
+                               idx_use = result_stats_t$idx,
+                                cor_fun = cor_fun_test,
+                                phi_h = attr(eval_log_t,"psi"),
+                               log_mult = c(-log(2),log(1.5), log(2)),
+                               log_bounds =c(log(1e-3),
+                                         log(10),
+                                         log(10))
+                               )
+    
+    mod_t <- fit_mvgp_sv_fun(Y = Y_train_t,
+                        X = X_train,
+                        X_pred = Basis_X,
+                        X_pred_all = Basis_X_all,
+                        a_mult = a_reps,
+                        pX = test_pXB,
+                        a_mult_px = am_px,
+                        n_edge = n_ed,
+                        cor_fun = cor_fun_test,
+                        joint_cov = joint_cov,
+                        het_sv = T,
+                        ini_pars = ini_sol_t$ini,
+                        ub = ini_sol_t$ub,
+                        lb = ini_sol_t$lb,
+                        penalty = pen_par,
+                        joint_ls_gp = joint_ls_gp,
+                        max_it = max_train_iters,
+                        rescale_y = scale_vars,
+                        rs = result_stats_t,
+                            verbose = verbose)
+    
+    
+    message("Heterogeneous Compression")
+    message(Sys.time())
+    
+    
+    
+    ini_sol_c <- pars_hom_to_het_reg(mod_hom_c$opt_sol$solution,
+                           n_properties = n_prop,
+                           pX = test_pX,
+                           X = X_train,
+                           edge_locs = pX_edge,
+                           var_mat = result_stats_c$var_mat,
+                           idx_use = result_stats_c$idx,
+                            cor_fun = cor_fun_test,
+                            phi_h = attr(eval_log_c,"psi"),
+                           log_mult = c(-log(2),log(1.5), log(2)),
+                           log_bounds =c(log(1e-3),
+                                         log(10),
+                                         log(10))
+                           )
+
+    mod_c <- fit_mvgp_sv_fun(Y = Y_train_c,
+                            X = X_train,
+                            X_pred = Basis_X,
+                            X_pred_all = Basis_X_all,
+                            a_mult = a_reps,
+                            pX = test_pXB,
+                            a_mult_px =am_px,
+                            n_edge = n_ed,
+                            cor_fun = cor_fun_test,
+                            joint_cov = joint_cov,
+                            het_sv = T,
+                            ini_pars = ini_sol_c$ini,
+                            ub = ini_sol_c$ub,
+                            lb = ini_sol_c$lb,
+                            penalty = pen_par,
+                            joint_ls_gp = F,
+                            max_it = max_train_iters,
+                            rescale_y = scale_vars,
+                            rs = result_stats_c,
+                            verbose = verbose)
+    
+    ## Prediction object
+    
+    test_pred_obj_t <- construct_pred_obj_fun(pars = mod_t$opt_sol$solution,
+                                        X = X_train,
+                                        Y_mat = mod_t$Y,
+                                        y_bar = mod_t$y_bar,
+                                        X_pred = Basis_X,
+                                        X_pred_all = Basis_X_all,
+                                        pX = test_pXB,
+                                        n_edge = n_ed,
+                                        n_properties = n_prop,
+                                        a_mult = a_reps,
+                                        a_mult_pX = am_px,
+                                        cov_type= cov_type,
+                                        cor_fun_gp = cor_fun_test,
+                                        rescale_y = mod_t$rs_y,
+                                        rs_mean = mod_t$rs_mean,
+                                        rs_mult = mod_t$rs_mult)
+
+    test_pred_obj_c <- construct_pred_obj_fun(pars = mod_c$opt_sol$solution,
+                                            X = X_train,
+                                            X_pred = Basis_X,
+                                            X_pred_all = Basis_X_all,
+                                            Y_mat = mod_c$Y,
+                                            y_bar = mod_c$y_bar,
+                                            pX = test_pXB,
+                                            n_edge = n_ed,
+                                            n_properties = n_prop,
+                                            a_mult = a_reps,
+                                            a_mult_pX = am_px,
+                                            cor_fun_gp = cor_fun_test,
+                                            cov_type= cov_type,
+                                            rescale_y = mod_c$rs_y,
+                                            rs_mean = mod_c$rs_mean,
+                                            rs_mult = mod_c$rs_mult)
+    
+    pol<- list(po_t = test_pred_obj_t,
+                          po_c = test_pred_obj_c)
+    
+    save(result_stats_c,result_stats_t,
+      ini_sol_c,ini_sol_t,
+     mod_c,mod_hom_c,
+     mod_hom_t,mod_t,
+     pol,
+     file = file_path)
+  }
+```
+

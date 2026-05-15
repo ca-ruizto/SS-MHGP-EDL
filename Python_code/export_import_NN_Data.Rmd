@@ -1,0 +1,526 @@
+---
+title: "Export_Import_NN_Data"
+output: html_document
+date: "2025-04-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(collapse)
+```
+
+## Export Data
+
+```{r}
+metals <- c("Mo","Nb","Ta","V","W")
+properties <- c("log_max_strain",
+                "bc_1","bc_2","bc_3","bc_4", "bc_5", "bc_6")
+n_prop <- length(properties)
+n_dim <- length(metals) - 1
+
+
+dat_ss_c <- rio::import(here::here("Results",
+                                 "ss_all_ort_coefs_c_uns.csv"))
+
+dat_ss_c <- as_tibble(dat_ss_c)
+
+dat_ss_c <- dat_ss_c%>%
+            filter(!(alloy %in% metals))%>%
+            mutate(id_row = row_number())
+
+dat_ss_t <- rio::import(here::here("Results",
+                                 "ss_all_ort_coefs_t_uns.csv"))
+
+dat_ss_t <- as_tibble(dat_ss_t)
+
+dat_ss_t <- dat_ss_t%>%
+            filter(!(alloy %in% metals))%>%
+            mutate(id_row = row_number())
+
+
+
+dat_ss_all <- dat_ss_t%>%
+                filter(!(alloy %in% metals))%>%
+                mutate(type = "t")%>%
+                bind_rows(dat_ss_c%>%
+                            mutate(type ="c"))%>%
+                unite("alloy_id",
+                      Mo:W,remove = FALSE)%>%
+                arrange(alloy_id, rep, type)#%>%
+                  #filter(! alloy %in% metals)
+
+dat_ss_fil <- dat_ss_all%>%
+              ungroup()%>%
+              group_by(alloy_id)%>%
+              arrange(desc(rep))%>%
+              slice_head(n=1)
+
+dat_ss_fil <- dat_ss_fil%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))
+```
+
+```{r}
+dat_ss_ter_c <- rio::import(here::here("Results",
+                                 "ss_ter_ort_coefs_c_uns.csv"))
+
+dat_ss_ter_c <- as_tibble(dat_ss_ter_c)%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))
+
+
+dat_ss_ter_t <- rio::import(here::here("Results",
+                                 "ss_ter_ort_coefs_t_uns.csv"))
+
+dat_ss_ter_t <- as_tibble(dat_ss_ter_t)%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))
+```
+
+
+
+
+```{r}
+max_ac <- max(dat_ss_fil$alloy_cnt)
+dat_ss_t_all <- dat_ss_t%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))%>%
+  bind_rows(dat_ss_ter_t%>%
+              mutate(alloy_cnt = alloy_cnt + max_ac))%>%
+  arrange(alloy_cnt)
+
+dat_ss_c_all <- dat_ss_c%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))%>%
+  bind_rows(dat_ss_ter_c%>%
+              mutate(alloy_cnt = alloy_cnt + max_ac))%>%
+  arrange(alloy_cnt)
+
+dat_ss_fil_all <- dat_ss_fil%>%
+  bind_rows(dat_ss_ter_c%>%
+              mutate(alloy_cnt = alloy_cnt + max_ac)%>%
+              group_by(alloy_cnt)%>%
+              arrange(desc(rep))%>%
+              slice_head(n=1)%>%
+              ungroup())%>%
+  arrange(alloy_cnt)
+
+dat_cand <- dat_ss_fil_all%>%
+  filter(elements > 2)
+
+ids_cand <- dat_cand$alloy_cnt
+
+dat_ss_c_cand <- dat_ss_c_all%>%
+                #filter(alloy_cnt %in% ids_cand)
+                filter(elements > 2)
+
+dat_ss_t_cand <- dat_ss_t_all%>%
+                #filter(alloy_cnt %in% ids_cand)
+                filter(elements> 2)
+```
+
+
+```{r}
+np_seed <- 12143
+source(here::here("Functions",
+                    "rm_mvgps_mat_mu_pred_functions.R"))
+```
+
+```{r}
+temp <- dat_ss_fil%>%
+  ungroup()%>%
+  filter(elements == 2,
+         round(pmax(Mo,Nb,Ta,V,W),1) %in% c(0.5,0.7,0.9) 
+         )%>%
+  arrange(alloy_cnt)
+
+dat_train_nn_t <- dat_ss_t%>%
+  filter(alloy_cnt %in% temp$alloy_cnt)%>%
+  arrange(alloy_cnt)
+out_nn_t <- out_t <- compute_mean_var_fun(Y = as.matrix(dat_train_nn_t[,properties]),
+                              a_mult = rep(3,nrow(temp)))
+
+out_train_t <- temp[,c(metals, "alloy_cnt")]
+
+out_train_t <- out_train_t[out_t$idx,]
+
+Y_bar <- matrix(out_t$y_bar,
+                nrow = nrow(temp),
+               byrow = T)
+Y_bar <- Y_bar[out_t$idx,]
+colnames(Y_bar) <- paste("m_",properties,sep = "")
+Y_var <- out_t$var_mat
+colnames(Y_var) <- paste("var_",properties,sep = "")
+
+out_train_t <- out_train_t%>%
+                bind_cols(Y_bar,
+                          log(Y_var))
+
+dat_train_nn_c <- dat_ss_c%>%
+  filter(alloy_cnt %in% temp$alloy_cnt)%>%
+  arrange(alloy_cnt)
+
+out_nn_c <- out_c <- compute_mean_var_fun(Y = as.matrix(dat_train_nn_c[,properties]),
+                              a_mult = rep(3,nrow(temp)))
+
+out_train_c <- temp[,c(metals, "alloy_cnt")]
+
+out_train_c <- out_train_c[out_c$idx,]
+
+Y_bar <- matrix(out_c$y_bar,
+                nrow = nrow(temp),
+               byrow = T)
+Y_bar <- Y_bar[out_c$idx,]
+colnames(Y_bar) <- paste("m_",properties,sep = "")
+Y_var <- out_c$var_mat
+colnames(Y_var) <- paste("var_",properties,sep = "")
+
+out_train_c <- out_train_c%>%
+                bind_cols(Y_bar,
+                          log(Y_var))
+
+
+write.csv(out_train_c,
+     file = here::here("Python_code",
+                       "Data",
+                       "dat_bin_odd_c.csv"),
+     row.names = FALSE)
+
+write.csv(out_train_t,
+     file = here::here("Python_code",
+                       "Data",
+                       "dat_bin_odd_t.csv"),
+     row.names = FALSE)
+```
+
+```{r}
+temp_test_bin <- dat_ss_fil%>%
+  ungroup()%>%
+  filter(elements == 2,
+         round(pmax(Mo,Nb,Ta,V,W),1) %in% c(0.6,0.8) 
+         )%>%
+  arrange(alloy_cnt)
+
+dat_test_c <- dat_ss_c%>%
+      filter(alloy_cnt %in% temp_test_bin$alloy_cnt)%>%
+  arrange(alloy_cnt)
+
+a_reps <- dat_test_c%>%
+          group_by(alloy_cnt)%>%
+          tally()
+
+out_t_c <- compute_mean_var_new_sample_fun(Y = as.matrix(dat_test_c[,properties]),
+                              a_mult = a_reps$n,
+                              rs_mean = out_c$rs_mean,
+                              rs_mult = out_c$rs_mult)
+
+Y_bt_c <- matrix(out_t_c$y_bar,
+                ncol = n_prop,
+               byrow = T)
+colnames(Y_bt_c) <- paste("m_",properties,sep = "")
+
+Y_vt_c <- matrix(NA,ncol = n_prop,
+                 nrow=nrow(Y_bt_c))
+Y_vt_c[out_t_c$idx,] <- out_t_c$var_mat
+colnames(Y_vt_c) <- paste("var_",properties,sep = "")
+
+dat_test_t <- dat_ss_t%>%
+      filter(alloy_cnt %in% temp_test_bin$alloy_cnt)%>%
+  arrange(alloy_cnt)
+
+a_reps <- dat_test_t%>%
+          group_by(alloy_cnt)%>%
+          tally()
+
+out_t_t <- compute_mean_var_new_sample_fun(Y = as.matrix(dat_test_t[,properties]),
+                              a_mult = a_reps$n,
+                              rs_mean = out_t$rs_mean,
+                              rs_mult = out_t$rs_mult)
+
+Y_bt_t <- matrix(out_t_t$y_bar,
+                ncol = n_prop,
+               byrow = T)
+colnames(Y_bt_t) <- paste("m_",properties,sep = "")
+
+Y_vt_t <- matrix(NA,ncol = n_prop,
+                 nrow=nrow(Y_bt_t))
+Y_vt_t[out_t_t$idx,] <- out_t_t$var_mat
+colnames(Y_vt_t) <- paste("var_",properties,sep = "")
+
+
+dat_ss_test <- dat_ss_fil%>%
+      filter(alloy_cnt %in% temp_test_bin$alloy_cnt)%>%
+  arrange(alloy_cnt)
+
+X_comp <- dat_ss_test[,metals]
+
+out_test <- X_comp%>%
+              mutate(alloy_cnt = dat_ss_test$alloy_cnt)
+
+out_test_t <- out_test%>%
+                bind_cols(Y_bt_t,
+                          log(Y_vt_t))
+out_test_c <- out_test%>%
+                bind_cols(Y_bt_c,
+                          log(Y_vt_c))
+
+  write.csv(out_test_t,
+     file = here::here("Python_code",
+                       "Data",
+                       "dat_test_bin_even_t.csv"),
+     row.names = FALSE)
+
+  write.csv(out_test_c,
+     file = here::here("Python_code",
+                       "Data",
+                       "dat_test_bin_even_c.csv"),
+     row.names = FALSE)
+```
+
+```{r}
+# np_seed <- 12143
+# ini_test_prop <- 0.75
+# 
+# set.seed(np_seed)
+# 
+# 
+# temp <- dat_ss_fil%>%
+#   filter(elements == 4)%>%
+#   ungroup()%>%
+#   slice_sample(prop = ini_test_prop)%>%
+#   arrange(alloy_cnt)
+# 
+# #temp <- temp[-which(temp$alloy_cnt == 59),] #59 is the quanary with x =0.2 for all elements
+# 
+# 
+# temp2 <- dat_ss_fil%>%
+#   filter(elements == 5)%>%
+#   ungroup()%>%
+#   slice_sample(prop = ini_test_prop)%>%
+#   arrange(alloy_cnt)
+# 
+# temp <- temp%>%
+#         bind_rows(temp2)%>%
+#         arrange(alloy_cnt)
+# 
+# 
+# dat_test_c <- dat_ss_c%>%
+#       filter(alloy_cnt %in% temp$alloy_cnt)%>%
+#   arrange(alloy_cnt)
+
+# a_reps <- dat_test_c%>%
+#           group_by(alloy_cnt)%>%
+#           tally()
+# 
+# out_t_c <- compute_mean_var_new_sample_fun(Y = as.matrix(dat_test_c[,properties]),
+#                               a_mult = a_reps$n,
+#                               rs_mean = out_c$rs_mean,
+#                               rs_mult = out_c$rs_mult)
+# 
+# Y_bt_c <- matrix(out_t_c$y_bar,
+#                 ncol = n_prop,
+#                byrow = T)
+# colnames(Y_bt_c) <- paste("m_",properties,sep = "")
+# 
+# Y_vt_c <- matrix(NA,ncol = n_prop,
+#                  nrow=nrow(Y_bt_c))
+# Y_vt_c[out_t_c$idx,] <- out_t_c$var_mat
+# colnames(Y_vt_c) <- paste("var_",properties,sep = "")
+# 
+# dat_test_t <- dat_ss_t%>%
+#       filter(alloy_cnt %in% temp$alloy_cnt)%>%
+#   arrange(alloy_cnt)
+# 
+# a_reps <- dat_test_t%>%
+#           group_by(alloy_cnt)%>%
+#           tally()
+# 
+# out_t_t <- compute_mean_var_new_sample_fun(Y = as.matrix(dat_test_t[,properties]),
+#                               a_mult = a_reps$n,
+#                               rs_mean = out_t$rs_mean,
+#                               rs_mult = out_t$rs_mult)
+# 
+# Y_bt_t <- matrix(out_t_t$y_bar,
+#                 ncol = n_prop,
+#                byrow = T)
+# colnames(Y_bt_t) <- paste("m_",properties,sep = "")
+# 
+# Y_vt_t <- matrix(NA,ncol = n_prop,
+#                  nrow=nrow(Y_bt_t))
+# Y_vt_t[out_t_t$idx,] <- out_t_t$var_mat
+# colnames(Y_vt_t) <- paste("var_",properties,sep = "")
+# 
+# 
+# 
+# X_comp <- temp[,metals]
+# out_test <- X_comp%>%
+#               mutate(alloy_cnt = temp$alloy_cnt)
+# 
+# out_test_t <- out_test%>%
+#                 bind_cols(Y_bt_t,
+#                           Y_vt_t)
+# out_test_c <- out_test%>%
+#                 bind_cols(Y_bt_c,
+#                           Y_vt_c)
+# 
+#   write.csv(out_test_t,
+#      file = here::here("Python_code",
+#                        "Data",
+#                        "dat_test_qq_t.csv"),
+#      row.names = FALSE)
+# 
+#   write.csv(out_test_c,
+#      file = here::here("Python_code",
+#                        "Data",
+#                        "dat_test_qq_c.csv"),
+#      row.names = FALSE)
+```
+
+
+```{r}
+a_reps <- dat_ss_c_cand%>%
+          group_by(alloy_cnt)%>%
+          tally()
+
+out_t_c <- compute_mean_var_new_sample_fun(Y = as.matrix(dat_ss_c_cand[,properties]),
+                              a_mult = a_reps$n,
+                              rs_mean = out_c$rs_mean,
+                              rs_mult = out_c$rs_mult)
+
+Y_bt_c <- matrix(out_t_c$y_bar,
+                ncol = n_prop,
+               byrow = T)
+colnames(Y_bt_c) <- paste("m_",properties,sep = "")
+
+Y_vt_c <- matrix(NA,ncol = n_prop,
+                 nrow=nrow(Y_bt_c))
+Y_vt_c[out_t_c$idx,] <- out_t_c$var_mat
+colnames(Y_vt_c) <- paste("var_",properties,sep = "")
+
+
+out_t_t <- compute_mean_var_new_sample_fun(Y = as.matrix(dat_ss_t_cand[,properties]),
+                              a_mult = a_reps$n,
+                              rs_mean = out_t$rs_mean,
+                              rs_mult = out_t$rs_mult)
+
+Y_bt_t <- matrix(out_t_t$y_bar,
+                ncol = n_prop,
+               byrow = T)
+colnames(Y_bt_t) <- paste("m_",properties,sep = "")
+
+Y_vt_t <- matrix(NA,ncol = n_prop,
+                 nrow=nrow(Y_bt_t))
+Y_vt_t[out_t_t$idx,] <- out_t_t$var_mat
+colnames(Y_vt_t) <- paste("var_",properties,sep = "")
+
+
+out_test <- dat_ss_c_cand%>%
+  group_by(alloy_cnt)%>%
+  slice_head(n=1)%>%
+  ungroup()
+
+out_test <- out_test[,c(metals, "alloy_cnt")]
+
+out_test_t <- out_test%>%
+                bind_cols(Y_bt_t,
+                          log(Y_vt_t))
+out_test_c <- out_test%>%
+                bind_cols(Y_bt_c,
+                          log(Y_vt_c))
+
+  write.csv(out_test_t,
+     file = here::here("Python_code",
+                       "Data",
+                       "dat_test_qq_t.csv"),
+     row.names = FALSE)
+
+  write.csv(out_test_c,
+     file = here::here("Python_code",
+                       "Data",
+                       "dat_test_qq_c.csv"),
+     row.names = FALSE)
+```
+
+
+## Import Results
+
+
+```{r}
+
+pred_mean_bin_t_nn <- read.csv(here::here("Python_code",
+                                 "Data", "May-Results","log_fixed seed",
+                                 "M_predictions_dat_test_bin_even_t.csv"))
+
+pred_mean_bin_c_nn <- read.csv(here::here("Python_code",
+                                 "Data", "May-Results","log_fixed seed",
+                                 "M_predictions_dat_test_bin_even_c.csv"))
+
+pred_var_bin_t_nn <- read.csv(here::here("Python_code",
+                                 "Data", "May-Results","log_fixed seed",
+                                 "V_predictions_dat_test_bin_even_t.csv"))
+
+pred_var_bin_c_nn <- read.csv(here::here("Python_code",
+                                 "Data", "May-Results","log_fixed seed",
+                                 "V_predictions_dat_test_bin_even_c.csv"))
+
+
+gp_mu_bin_nn_t <- (as.matrix(pred_mean_bin_t_nn[,6:10 ])  %r*% 
+                     out_nn_t$rs_mult) %r+% out_nn_t$rs_mean
+gp_mu_bin_nn_c <- (as.matrix(pred_mean_bin_c_nn[,6:10 ])  %r*% 
+                     out_nn_c$rs_mult) %r+% out_nn_c$rs_mean
+
+
+gp_var_bin_nn_t <-  exp(as.matrix(pred_var_bin_t_nn[,6:10 ])) %r*%
+                    out_nn_t$rs_mult^2
+gp_var_bin_nn_c <-  exp(as.matrix(pred_var_bin_c_nn[,6:10 ])) %r*%
+                    out_nn_c$rs_mult^2
+
+
+
+save(gp_mu_bin_nn_t,
+     gp_mu_bin_nn_c,
+     gp_var_bin_nn_t,
+     gp_var_bin_nn_c,
+     file = here::here("Python_code",
+                       "pred_bin_best.RData"))
+```
+
+
+```{r}
+
+pred_mean_qq_t_nn <- read.csv(here::here("Python_code",
+                                 "Data", "May-Results","log_fixed seed",
+                                 "M_predictions_dat_test_qq_t.csv"))
+
+pred_mean_qq_c_nn <- read.csv(here::here("Python_code",
+                                 "Data", "May-Results","log_fixed seed",
+                                 "M_predictions_dat_test_qq_c.csv"))
+
+pred_var_qq_t_nn <- read.csv(here::here("Python_code",
+                                 "Data", "May-Results","log_fixed seed",
+                                 "V_predictions_dat_test_qq_t.csv"))
+
+pred_var_qq_c_nn <- read.csv(here::here("Python_code",
+                                 "Data", "May-Results","log_fixed seed",
+                                 "V_predictions_dat_test_qq_c.csv"))
+
+
+gp_mu_qq_nn_t <- (as.matrix(pred_mean_qq_t_nn[,6:10])  %r*% 
+                     out_nn_t$rs_mult) %r+% out_nn_t$rs_mean
+gp_mu_qq_nn_c <- (as.matrix(pred_mean_qq_c_nn[,6:10])  %r*% 
+                     out_nn_c$rs_mult) %r+% out_nn_c$rs_mean
+
+
+gp_var_qq_nn_t <-  exp(as.matrix(pred_var_qq_t_nn[,6:10])) %r*%
+                    out_nn_t$rs_mult^2
+gp_var_qq_nn_c <-  exp(as.matrix(pred_var_qq_c_nn[,6:10 ])) %r*%
+                    out_nn_c$rs_mult^2
+
+
+
+save(gp_mu_qq_nn_t,
+     gp_mu_qq_nn_c,
+     gp_var_qq_nn_t,
+     gp_var_qq_nn_c,
+     file = here::here("Python_code",
+                       "pred_qq_best.RData"))
+```
+
+
