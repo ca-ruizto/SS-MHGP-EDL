@@ -214,16 +214,32 @@ dat_ss_train <- dat_ss_fil%>%
       filter((alloy_cnt %in% id_train))%>%
   arrange(alloy_cnt)
 
-dat_train <- dat_ss_all%>%
-      filter(alloy_cnt %in% id_train)%>%
-      arrange(alloy_cnt)%>%
-                  pivot_longer(cols = all_of(properties),
-                               names_to = "property",
-                               values_to = "val_true")
 
 dat_bin_test <- dat_ss_fil%>%
             filter(! alloy_cnt %in% id_train,
                    elements == 2)
+
+dat_train <- dat_ss_all%>%
+      filter(alloy_cnt %in% id_train)%>%
+      arrange(alloy_cnt)
+
+dat_train_c <- dat_train%>%
+      filter(type == "c")
+    
+dat_train_t <- dat_train%>%
+      filter(type == "t")
+
+out_nn_c <- compute_mean_var_fun(Y = as.matrix(dat_train_c[,properties]),
+                              a_mult = rep(3,nrow(temp)))
+
+out_nn_t <- compute_mean_var_fun(Y = as.matrix(dat_train_t[,properties]),
+                              a_mult = rep(3,nrow(temp)))
+
+dat_train <- dat_train%>%
+                  pivot_longer(cols = all_of(properties),
+                               names_to = "property",
+                               values_to = "val_true")
+
 
 dat_train_B <- dat_train%>%
     group_by(alloy_cnt, rep)%>%
@@ -234,6 +250,7 @@ dat_train_c <- dat_train%>%
     
 dat_train_t <- dat_train%>%
       filter(type == "t")
+
 ```
 
 Candidates for active learning
@@ -737,50 +754,54 @@ impse_dat_hom%>%
 
 
 ```{r}
-nn_bin_t <- read.csv(here::here("Results",
-                                "NN_Experts",
-                                "dat_test_bin_even_t_predictions.csv"))
+nn_bin_t <- read.csv(here::here("Python_Code", "Data", "nn_6",
+                                "dat_test_bin_even_t_predictions_6.csv"))
 
-nn_bin_c <- read.csv(here::here("Results",
-                                "NN_Experts",
-                                "dat_test_bin_even_c_predictions.csv"))
+nn_bin_c <- read.csv(here::here("Python_Code", "Data","nn_6",
+                                "dat_test_bin_even_c_predictions_6.csv"))
 
-nn_qq_t <- read.csv(here::here("Results",
-                                "NN_Experts",
-                                "dat_test_qq_t_predictions.csv"))
+nn_qq_t <- read.csv(here::here("Python_Code", "Data","nn_6",
+                                "dat_test_qq_t_predictions_6.csv"))
 
-nn_qq_c <- read.csv(here::here("Results",
-                                "NN_Experts",
-                                "dat_test_qq_c_predictions.csv"))
+nn_qq_c <- read.csv(here::here("Python_Code", "Data","nn_6",
+                                "dat_test_qq_c_predictions_6.csv"))
 
-mu_ids <- 17 + 1:7
+mu_ids <- 7 + 1:7
 var_ids <- max(mu_ids) + 1:7
+alloy_cnt_col <- 6
 
-gp_mu_nn_t <- bind_rows(nn_bin_t[,c(1,mu_ids)],
-                        nn_qq_t[,c(1,mu_ids)])%>%
+gp_mu_nn_t <- bind_rows(nn_bin_t[,c(alloy_cnt_col,mu_ids)],
+                        nn_qq_t[,c(alloy_cnt_col,mu_ids)])%>%
               arrange(alloy_cnt)
 gp_mu_nn_t <- as.matrix(gp_mu_nn_t[,-1])
+gp_mu_nn_t <- (gp_mu_nn_t%r*% out_nn_t$rs_mult) %r+% out_nn_t$rs_mean
 
-gp_var_nn_t<- bind_rows(nn_bin_t[,c(1,var_ids)],
-                        nn_qq_t[,c(1,var_ids)])%>%
+
+gp_var_nn_t<- bind_rows(nn_bin_t[,c(alloy_cnt_col,var_ids)],
+                        nn_qq_t[,c(alloy_cnt_col,var_ids)])%>%
               arrange(alloy_cnt)
-gp_var_nn_t <- as.matrix(gp_var_nn_t[,-1])
+gp_var_nn_t <- exp(as.matrix(gp_var_nn_t[,-1])) %r*%
+                    out_nn_t$rs_mult^2
 
-gp_mu_nn_c <- bind_rows(nn_bin_c[,c(1,mu_ids)],
-                        nn_qq_c[,c(1,mu_ids)])%>%
+
+gp_mu_nn_c <- bind_rows(nn_bin_c[,c(alloy_cnt_col,mu_ids)],
+                        nn_qq_c[,c(alloy_cnt_col,mu_ids)])%>%
               arrange(alloy_cnt)
 gp_mu_nn_c <- as.matrix(gp_mu_nn_c[,-1])
+gp_mu_nn_c <- (gp_mu_nn_c%r*% out_nn_c$rs_mult) %r+% out_nn_c$rs_mean
 
-gp_var_nn_c<- bind_rows(nn_bin_c[,c(1,var_ids)],
-                        nn_qq_c[,c(1,var_ids)])%>%
+gp_var_nn_c<- bind_rows(nn_bin_c[,c(alloy_cnt_col,var_ids)],
+                        nn_qq_c[,c(alloy_cnt_col,var_ids)])%>%
               arrange(alloy_cnt)
-gp_var_nn_c <- as.matrix(gp_var_nn_c[,-1])
+gp_var_nn_c <- exp(as.matrix(gp_var_nn_c[,-1]))  %r*%
+                    out_nn_c$rs_mult^2
+
 ```
 
 
 ```{r}
 
-res_nn_t <- predict_mod_het_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt")],
+res_nn_t <- predict_mod_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt")],
                                             gp_mu = gp_mu_nn_t,
                                            gp_var = gp_var_nn_t,
                                            step_id = "NN",
@@ -790,7 +811,7 @@ res_nn_t <- predict_mod_het_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_
                                            n_samples = 1e4,
                                            prop_names = properties)
 
-res_nn_c <- predict_mod_het_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt")],
+res_nn_c <- predict_mod_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt")],
                                             gp_mu = gp_mu_nn_c,
                                            gp_var = gp_var_nn_c,
                                            step_id = "NN",
@@ -804,15 +825,14 @@ res_nn_c <- predict_mod_het_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_
 
 
 ```{r}
-dat_comp_nn <- dat_pm%>%
-  bind_rows(res_nn_c$mp_mean %>% 
+dat_comp_nn <- bind_rows(res_nn_c$mp_mean ,
+                          res_nn_t$mp_mean )%>% 
               mutate(iter = 0,
+                     Step = "DL",
                      Kernel = "DL",
-                     mean_type = "DL"),
-            res_nn_t$mp_mean %>% 
-              mutate(iter = 0,
-                     Kernel = "DL",
-                     mean_type = "DL"))%>%
+                     mean_type = "DL",
+                     Model = "DL",
+                     elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))%>%
            pivot_longer(cols= all_of(props),
                values_to = "pred",
                names_to = "property")%>%
@@ -821,17 +841,23 @@ dat_comp_nn <- dat_pm%>%
                          group_by(alloy_cnt,Test,property)%>%
                          summarise(val = mean(val)),
                        by = join_by(alloy_cnt,Test,property))
+
+dat_comp_nn <- dat_comp_nn %>%
+                bind_rows(dat_comp)
 ```
 
 ```{r acc_bin_mods_nn, fig.height=4.5, fig.width=7}
 prop_ltx <- unname(TeX(c("$\\sigma_u$","$\\epsilon_u$",
                          "$U_T$","$E$")))
-mod_names_nn <- c("Bin",
-               "Bin Poly",
-               "Bin NN")
+mod_names_nn <- c("int_m32",
+                  "pol_m32",
+                  "int_m52",
+               "pol_m52",
+               "DL")
 
 p1 <- dat_comp_nn%>%
   filter(Step %in% mod_names_nn,
+         Model %in% c("Het", "DL"),
          iter < 1,
          elements < 3)%>%
   mutate(rer = (pred-val)/val,
@@ -851,7 +877,7 @@ p1 <- dat_comp_nn%>%
              scales = "free")+
   labs(y = "Relative Error (%)",
        x = "Property",
-       title = "Accuracy on Quaternary and Quinary Alloys")+
+       title = "Accuracy on Binary Alloys")+
   theme(legend.position = "bottom",
         axis.text.x = element_text(size = 12),
         legend.text = element_text(size=10),
@@ -860,14 +886,18 @@ p1 <- dat_comp_nn%>%
 p1
 ```
 
-
 ```{r acc_qq_mods_nn, fig.height=4.5, fig.width=7}
-mod_names_nn <- c("Bin",
-               "Bin Poly",
-               "Bin NN")
+prop_ltx <- unname(TeX(c("$\\sigma_u$","$\\epsilon_u$",
+                         "$U_T$","$E$")))
+mod_names_nn <- c("int_m32",
+                  "pol_m32",
+                  "int_m52",
+               "pol_m52",
+               "DL")
 
 p1 <- dat_comp_nn%>%
   filter(Step %in% mod_names_nn,
+         Model %in% c("Het", "DL"),
          iter < 1,
          elements > 2)%>%
   mutate(rer = (pred-val)/val,
