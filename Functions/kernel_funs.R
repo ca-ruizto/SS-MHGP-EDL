@@ -87,3 +87,6 @@ additive_cor_fun <- function(theta,D_mat,n_block=1,kernel_fun){
   
   return(kernel_fun(D))
 }
+
+
+

@@ -383,7 +383,8 @@ log_like_mv_het_spa_gp_fun <- function(D0, X_pred,X_pred_all,
                                n_edge = 0,#id_train_edge = NULL,
                                cor_fun_gp, cor_fun_gp_sv = NULL, cov_fun, dComb = NULL,
                       eps = sqrt(.Machine$double.eps),
-                      penalty = F){
+                      penalty = F,
+                      prior_theta = NULL){
   #sv stands for simulation variability
   
   #setups
@@ -525,6 +526,9 @@ log_like_mv_het_spa_gp_fun <- function(D0, X_pred,X_pred_all,
     
     return(loglik + pen)
   }
+  
+  if(!is.null(prior_theta)) loglik <- loglik + prior_theta(exp(theta)) + prior_theta(exp(theta_sv))
+  
   return(as.numeric(loglik))
 }
 
@@ -533,7 +537,8 @@ log_like_mv_hom_gp_fun <- function(D0, y_bar, X_pred = NULL, X_pred_all = NULL,
                                theta, theta_cov, 
                                g,  beta0 = NULL, 
                                cor_fun_gp,  cov_fun, 
-                               eps = sqrt(.Machine$double.eps)){
+                               eps = sqrt(.Machine$double.eps),
+                               prior_theta = NULL){
   #sv stands for simulation variability
   
   #setups
@@ -578,6 +583,8 @@ log_like_mv_hom_gp_fun <- function(D0, y_bar, X_pred = NULL, X_pred_all = NULL,
   
   attr(loglik, "psi") <- psi
   
+  if(!is.null(prior_theta)) loglik <- loglik + prior_theta(exp(theta))
+  
   return(loglik)
 }
 
@@ -588,6 +595,7 @@ fit_mvgp_sv_fun <- function(Y,X,
                             n_edge = 0,
                             cor_fun,cor_sv_fun = NULL,
                             cov_fun = log_chol_diag_spa_fun,
+                            prior_theta = NULL,
                             het_sv = T,
                             ini_pars , ub = NULL,lb = NULL,
                             max_it = 1,verbose = TRUE,ftol_it = 1e-3,
@@ -678,6 +686,7 @@ fit_mvgp_sv_fun <- function(Y,X,
                                      theta_cov = th_cov, 
                                      theta_cov_sv = th_cov_sv,
                                      mult_theta_sv=mts, theta_sv = th_sv,
+                                     prior_theta= prior_theta,
                                      g = exp(th_g),
                                      dX = dX_mat,
                                      a_mult_pX = a_mult_px,
@@ -702,7 +711,8 @@ fit_mvgp_sv_fun <- function(Y,X,
                                    theta_cov = th_cov, 
                                    g = exp(th_g),
                                    cor_fun_gp = cor_fun, 
-                                   cov_fun = cov_fun)
+                                   cov_fun = cov_fun,
+                                   prior_theta= prior_theta)
       
     }
     
