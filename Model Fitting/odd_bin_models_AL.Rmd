@@ -119,20 +119,26 @@ joint_cov <- het_sv <-joint_ls_gp <- F
 max_train_iters <- 10
 scale_vars <- "after"
 al_steps <- 6
-exp_name <- "train_bin_rl_bal_int_m32_2026_04_15"
-only_int <- T
+exp_name <- "train_bin_rl_prior_gam_pol_m52_2026_05_19"
+only_int <- F
 ini_seed <- 233545
 np_seed <- 12143
 verbose <- F
 pen_par <- F
+prior_th <- "gam"
 n_order <- 3
 ini_prev_mod <- T
-cov_type = "Matern3_2" #"Gaussian", "Matern5_2", "Matern3_2"
+cov_type = "Matern5_2" #"Gaussian", "Matern5_2", "Matern3_2"
 
 
 cor_fun_test <- function(theta, D_mat) general_cor_fun(theta = theta,
                                                        D_mat = D_mat,
-                                                       kernel_fun = matern_3_2_fun) #matern_5_2_fun gaus_ker_fun
+                                                       kernel_fun = matern_5_2_fun) #matern_5_2_fun gaus_ker_fun
+```
+
+```{r}
+priors <- construct_prior_fun(n_dim =  length(metals) - 1,
+                              prior_type = prior_th)
 ```
 
 
@@ -409,7 +415,8 @@ Y_train_c <- matrix(y_ini_c,
 
     ini_hom_c <- ini_pars_hom_fun(result_stats_c, 
                                   n_dim = n_dim,
-                                  log_bounds = log(c(1e-1,4,10)))
+                                  log_bounds = log(c(1e-1,4,10)),
+                                  prior_mean = log(priors$ini_ls))
     
     result_stats_t <- compute_mean_var_fun(Y = Y_train_t,
                                      a_mult = a_reps,
@@ -417,7 +424,8 @@ Y_train_c <- matrix(y_ini_c,
 
     ini_hom_t <- ini_pars_hom_fun(result_stats_t,
                                   n_dim = n_dim,
-                                  log_bounds = log(c(1e-1,4,10)))
+                                  log_bounds = log(c(1e-1,4,10)),
+                                  prior_mean = log(priors$ini_ls))
 ```
 
 
@@ -524,7 +532,8 @@ for(iter in 0:5){
                             max_it =max_train_iters,
                             rescale_y = scale_vars,
                             rs = result_stats_c,
-                            verbose = verbose)
+                            verbose = verbose,
+                            prior_theta = priors$pf)
     
     eval_log_c <- fit_mvgp_sv_fun(Y = Y_train_c,
                         X = X_train_ilr,
@@ -538,7 +547,8 @@ for(iter in 0:5){
                         joint_ls_gp = joint_ls_gp,
                         opt = F,
                         rescale_y = scale_vars,
-                            verbose = verbose)
+                            verbose = verbose,
+                        prior_theta = priors$pf)
     
     
     if(iter>0) ini_hom_t <- update_ini_pars_fun(mod_hom_t$opt_sol$solution,
@@ -559,7 +569,8 @@ for(iter in 0:5){
                             max_it =max_train_iters,
                             rescale_y = scale_vars,
                             rs = result_stats_t,
-                            verbose = verbose)
+                            verbose = verbose,
+                            prior_theta = priors$pf)
     
     
     eval_log_t <- fit_mvgp_sv_fun(Y = Y_train_t,
@@ -575,7 +586,8 @@ for(iter in 0:5){
                             max_it =max_train_iters,
                             opt = F,
                             rescale_y = scale_vars,
-                            verbose = verbose)
+                            verbose = verbose,
+                            prior_theta = priors$pf)
     
     ### Heterogeneous solution
     
@@ -605,8 +617,7 @@ for(iter in 0:5){
                                 cor_fun = cor_fun_test,
                                 phi_h = attr(eval_log_t,"psi"),
                                log_mult = c(-log(2),log(1.5), log(2)),
-                               log_bounds =c(log(1e-2),
-                                         log(5),
+                               log_bounds =c(-Inf, Inf,
                                          log(5))
                                )
     }
@@ -633,7 +644,8 @@ for(iter in 0:5){
                         rescale_y = scale_vars,
                         #eps = 1e-7,
                         rs = result_stats_t,
-                            verbose = verbose)
+                            verbose = verbose,
+                        prior_theta = priors$pf)
     
     
     message("Heterogeneous Compression")
@@ -654,8 +666,8 @@ for(iter in 0:5){
                             cor_fun = cor_fun_test,
                             phi_h = attr(eval_log_c,"psi"),
                            log_mult = c(-log(2),log(1.5), log(2)),
-                           log_bounds =c(log(1e-2),
-                                         log(5),
+                           log_bounds =c(-Inf,
+                                         Inf,
                                          log(5))
                            )
     }
@@ -682,7 +694,8 @@ for(iter in 0:5){
                             max_it = max_train_iters,
                             rescale_y = scale_vars,
                             rs = result_stats_c,
-                            verbose = verbose)
+                            verbose = verbose,
+                            prior_theta = priors$pf)
     
     ## Prediction object
     
@@ -766,6 +779,15 @@ for(iter in 0:5){
     pol[["Tension-Hom"]] = test_pred_obj_hom_t
     pol[["Compression-Hom"]]  = test_pred_obj_hom_c
     
+    message(paste("Com-Het th:", paste(exp(test_pred_obj_c$theta),
+                                       collapse = ", ")))
+    message(paste("Com-Hom th:", paste(exp(test_pred_obj_hom_c$theta), 
+                                       collapse = ", ")))
+    message(paste("Ten-Het th:", paste(exp(test_pred_obj_t$theta), 
+                                       collapse = ", ")))
+    message(paste("Ten-Hom th:", paste(exp(test_pred_obj_hom_t$theta), 
+                                       collapse = ", ")))
+    
     save(result_stats_c,result_stats_t,
       ini_sol_c,ini_sol_t,
      mod_c,mod_hom_c,
@@ -786,7 +808,7 @@ for(iter in 0:5){
 ```{r}
 save(np_id_h,
      file = here::here("Results","Fixed Data",
-                       "ALV2_26_bal_np_h_pol_m32.RData"))
+                       "ALV2_26_prior_gam_np_h_pol_m52.RData"))
 
 ```
 

@@ -217,7 +217,9 @@ initial_delta_reg_fun <- function(var_mat, X,
   return(result)
 }
 
-ini_pars_hom_fun <- function(rs = NULL, n_dim, prev_pars = NULL,
+ini_pars_hom_fun <- function(rs = NULL, n_dim,
+                            prior_mean = NULL,
+                             prev_pars = NULL,
                              log_bounds = log(c(1e-2,2,50))){
   
   if(is.null(prev_pars)){
@@ -231,16 +233,26 @@ ini_pars_hom_fun <- function(rs = NULL, n_dim, prev_pars = NULL,
     s <- prev_pars[1:(n_prop-1) + n_dim + n_prop]
   }
   
+  if(is.null(prior_mean)){
+    ini_sol <- rep(log(0.5),n_dim)
+    lb <- rep(log_bounds[1], n_dim)
+    ub <- rep(log_bounds[2], n_dim)
+    
+  }else{
+    ini_sol <- rep(prior_mean, n_dim)
+    lb <- rep(-Inf, n_dim)
+    ub <- rep(Inf, n_dim)
+  }
   
-  ini_sol <- c(rep(log(0.5),n_dim),
-               s,g)
-  
-  lb <- c(rep(log_bounds[1], n_dim),
-         s - log_bounds[3],
-         g - log_bounds[3])
-  ub <- c(rep(log_bounds[2], n_dim),
+  ini_sol <- c(ini_sol,
+                s,g)
+  lb <- c(lb,
+          s - log_bounds[3],
+          g - log_bounds[3])
+  ub <- c(ub,
           s + log_bounds[3],
           g + log_bounds[3])
+  
   
   return(list(ini = ini_sol,
               lb = lb,
@@ -527,7 +539,7 @@ log_like_mv_het_spa_gp_fun <- function(D0, X_pred,X_pred_all,
     return(loglik + pen)
   }
   
-  if(!is.null(prior_theta)) loglik <- loglik + prior_theta(exp(theta)) + prior_theta(exp(theta_sv))
+  if(!is.null(prior_theta)) loglik <- loglik/2 + prior_theta(exp(theta)) + prior_theta(exp(theta_sv))
   
   return(as.numeric(loglik))
 }
@@ -583,7 +595,7 @@ log_like_mv_hom_gp_fun <- function(D0, y_bar, X_pred = NULL, X_pred_all = NULL,
   
   attr(loglik, "psi") <- psi
   
-  if(!is.null(prior_theta)) loglik <- loglik + prior_theta(exp(theta))
+  if(!is.null(prior_theta)) loglik <- loglik/2 + prior_theta(exp(theta))
   
   return(loglik)
 }

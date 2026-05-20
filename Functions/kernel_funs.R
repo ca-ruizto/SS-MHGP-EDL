@@ -15,6 +15,20 @@ exp_ker_fun <- function(D) exp(-D)
 
 gaus_ker_fun <- function(D) exp(-D^2 / 2)
 
+construct_prior_fun <- function(n_dim, prior_type = "gam"){
+  
+  ini_ls <- sqrt(n_dim)
+  
+  if(prior_type == "gam"){
+    pf <- function(x) prod(dgamma(x, shape = 2*ini_ls , rate = 2))
+  }else{
+    pf <- function(x) prod(dnorm(log(x), mean = log(ini_ls), sd =  10))
+  }
+  
+  return(list(pf = pf,
+              ini_ls = ini_ls))
+}
+
 ### Distances functions #####
 
 mv_dist_fun <- function(X, X2 = NULL){
