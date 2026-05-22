@@ -8,7 +8,7 @@
 #   return(V)
 # }
 
-create_ilr_basis <- function(D, method = "basic"){
+create_ilr_basis <- function(D, method = "balanced"){
   compositions::ilrBase(D = D, method = method)
 }
 
@@ -21,7 +21,7 @@ additive_zero_replace <- function(x, epsilon) {
 }
 
 ilr_bounded_minmax_additive <- function(x, b = 0, epsilon = 1e-4, 
-                                        z_min = NULL, z_max = NULL, method = "balanced") {
+                                        z_min = NULL, z_max = NULL, method = "basic") {
   if (is.vector(x)) x <- matrix(x, nrow = 1)
   D <- ncol(x)
   
@@ -46,10 +46,8 @@ ilr_bounded_minmax_additive <- function(x, b = 0, epsilon = 1e-4,
   if (is.null(z_max)) z_max <- apply(z, 2, max)
   
   range_z <- z_max - z_min
-  range_z[range_z == 0] <- 1 
-  
-  u <- sweep(z, 2, z_min, "-")
-  u <- sweep(u, 2, range_z, "/")
+
+  u <- (z %r-% z_min) %r/% range_z
   
   return(list(
     u = u,

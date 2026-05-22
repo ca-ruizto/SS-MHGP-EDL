@@ -13,7 +13,7 @@ matern_3_2_fun <- function(D){
 
 exp_ker_fun <- function(D) exp(-D)
 
-gaus_ker_fun <- function(D) exp(-D^2 / 2)
+gaus_ker_fun <- function(D) exp(-D^2 )
 
 construct_prior_fun <- function(n_dim, prior_type = "gam"){
   

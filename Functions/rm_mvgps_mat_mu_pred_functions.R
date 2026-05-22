@@ -1133,7 +1133,7 @@ construct_pred_obj_fun <- function(pars,X,
 }
 
 predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
-                                  pred_obj, lambda_only = F){
+                                  pred_obj, lambda_only = F, sd2_only = F){
   
   if(is.null(dim(newX))) newX <- matrix(newX, nrow=1)
   
@@ -1149,6 +1149,13 @@ predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
   kx <- pred_obj$cor_fun_gp(D_mat = dX,
                             theta = pred_obj$theta)
   kx <- kronecker(kx, pred_obj$Sig)
+  
+  sd2 <- rep(diag(pred_obj$Sig),n_locs) - diag(kx %*% tcrossprod(pred_obj$Ki, kx))
+    #fast_diagMK_fun(pred_obj$Ki, kx)
+  
+  sd2 <- pred_obj$tau * sd2
+  
+  if(sd2_only) return(sd2)
   
   dpX <- mv_dist_fun(X = newX, 
                     X2 = pred_obj$pX)
@@ -1169,11 +1176,6 @@ predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
 
   sd2var <- pred_obj$tau * pred_obj$tau_hat_var* sd2var
   
-  
-  sd2 <- rep(diag(pred_obj$Sig),n_locs) -
-              fast_diagMK_fun(pred_obj$Ki, kx)
-  
-  sd2 <- pred_obj$tau * sd2
   
   overall_mean <- drop( newX_pred %*% pred_obj$beta0+
                           kx %*% pred_obj$KiYB)

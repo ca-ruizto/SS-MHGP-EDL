@@ -14,9 +14,11 @@ Wij_mv <- function(X, X2 = NULL, theta,
   
   wij <- 1
   
+  if(cov_type == "Gaussian") th <- sqrt(th)
+  
   for(i in 1:n_dim){
-    wij <- wij * hetGP::Wij(mu1 = matrix(X_in[,i], ncol = 1),
-                            mu2 = matrix(X2_in[,i], ncol =1),
+    wij <- wij * hetGP::Wij(mu1 = matrix(X_in[,i] , ncol = 1),
+                            mu2 = matrix(X2_in[,i] , ncol =1),
                             theta = th[i], 
                             type = cov_type)  
   }
@@ -25,7 +27,7 @@ Wij_mv <- function(X, X2 = NULL, theta,
 }
 
 Wij_mv2 <- function(X, X2 = NULL, theta, 
-                    scale_factor  = pi/2, 
+                    scale_factor  = 1, 
                     cov_type="Matern5_2"){
   #scale_factor to transform x to [0,1] range
   n_dim <- ncol(X)
@@ -54,7 +56,7 @@ trace_inv_mv <- function(Ki, W, n_properties){
 
 IMSPE_MV <- function(pred_obj, scale_factor = 1){
   
-  Wijs <- Wij_mv(X = pred_obj$X0,
+  Wijs <- Wij_mv2(X = pred_obj$X0,
                  theta = pred_obj$theta,
                  scale_factor = scale_factor,
                  cov_type = pred_obj$cov_type)
@@ -68,6 +70,69 @@ IMSPE_MV <- function(pred_obj, scale_factor = 1){
                                               n_properties = pred_obj$n_properties)
   
   pred_obj$tau * sum(result) *sfn
+}
+
+IMSPE_MV2 <- function(pred_obj, scale_factor = 1){
+  
+  Wijs <- Wij_mv(X = pred_obj$X0,
+                 theta = pred_obj$theta,
+                 scale_factor = scale_factor,
+                 cov_type = pred_obj$cov_type)
+  
+  Wijs_mv <- kronecker(Wijs,pred_obj$Sig %*% pred_obj$Sig)
+  sfn <- scale_factor^pred_obj$n_properties
+  #Km <- matrixcalc::commutation.matrix(ncol(pred_obj$Sig), ncol(Wijs))
+  #Km <- Matrix(Km, sparse = T)
+  
+  # result <- diag(pred_obj$Sig) - trace_inv_mv(Ki = pred_obj$Ki %*% Km,
+  #                                             W=Wijs_mv,
+  #                                             n_properties = pred_obj$n_properties)
+  
+  result <- sum(diag(pred_obj$Sig)) - sum(diag(pred_obj$Ki %*% Wijs_mv))
+  
+  pred_obj$tau * result *sfn
+}
+
+IMSPE_MV_Sampling <- function(pred_obj, n_points = 25, scale_factor = 1){
+  n_dim <- pred_obj$theta |> length()
+  x <- seq(0, 1, length = n_points + 2)
+  x <- x[-c(1, n_points + 2)]
+  x_list = list(var1 = x)
+  for(i in 2:n_dim) x_list[[paste0("var", i)]] <- x
+  X_new <- expand.grid(x_list,
+                       KEEP.OUT.ATTRS = FALSE)
+  
+  sd2_pred <- predict_mv_het_gp_fun(newX = X_new,
+                                    pred_obj = pred_obj,
+                                    sd2_only = T)
+  
+  sd2_pred <- matrix(sd2_pred,
+                     ncol = pred_obj$n_properties,
+                     byrow = T)
+  
+  return(sum(sd2_pred) / (n_points ^ n_dim) )
+}
+
+IMSPE_MV_NI <- function(pred_obj, max_eval = 1e5, return_object = F ){
+  n_dim <- pred_obj$theta |> length()
+  
+  sd2_fun <- function(x){
+    predict_mv_het_gp_fun(newX = x,
+                                 pred_obj = pred_obj,
+                                 sd2_only = T) |>
+    sum()
+
+  }  
+  
+  int_result <- cubature::hcubature(f = sd2_fun,
+                                    lowerLimit = rep(0, n_dim),
+                                    upperLimit = rep(1, n_dim),
+                                    vectorInterface = FALSE,
+                                    maxEval = max_eval,
+                                    absError = 1e-2)
+  if(return_object) return(int_result)
+  
+  return(int_result$integral )
 }
 
 cIMSPE_MV <- function(x, pred_obj, 

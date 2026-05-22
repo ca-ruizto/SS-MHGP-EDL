@@ -119,8 +119,8 @@ joint_cov <- het_sv <-joint_ls_gp <- F
 max_train_iters <- 10
 scale_vars <- "after"
 al_steps <- 6
-exp_name <- "train_bin_rl_prior_gam_pol_m52_2026_05_19"
-only_int <- F
+exp_name <- "train_bin_rl_prior_gam_int_m32_2026_05_19"
+only_int <- T
 ini_seed <- 233545
 np_seed <- 12143
 verbose <- F
@@ -128,12 +128,12 @@ pen_par <- F
 prior_th <- "gam"
 n_order <- 3
 ini_prev_mod <- T
-cov_type = "Matern5_2" #"Gaussian", "Matern5_2", "Matern3_2"
+cov_type = "Matern3_2" #"Gaussian", "Matern5_2", "Matern3_2"
 
 
 cor_fun_test <- function(theta, D_mat) general_cor_fun(theta = theta,
                                                        D_mat = D_mat,
-                                                       kernel_fun = matern_5_2_fun) #matern_5_2_fun gaus_ker_fun
+                                                       kernel_fun = matern_3_2_fun) #matern_5_2_fun gaus_ker_fun
 ```
 
 ```{r}
@@ -142,29 +142,7 @@ priors <- construct_prior_fun(n_dim =  length(metals) - 1,
 ```
 
 
-```{r}
-mixture_dat <- gen.mixture(11,5)
 
-eps_ilr <-0.02
-
-xx <- ilr_bounded_minmax_additive(as.matrix(mixture_dat),
-                                  b = 0,
-                                  epsilon = eps_ilr,
-                                  method = "basic")
-
-xx$z_min
-xx$z_max
-#xx$u[1:10,]
-
-xx <- ilr_bounded_minmax_additive(as.matrix(mixture_dat),
-                                  b = 0,
-                                  epsilon = eps_ilr,
-                                  method = "balanced")
-
-xx$z_min
-xx$z_max
-xx$u[1:11,]
-```
 
 
 ## AL algorithm
@@ -320,6 +298,33 @@ dat_ss_t_cand <- dat_ss_t_all%>%
                 filter(alloy_cnt %in% ids_cand)
 ```
 
+```{r fig.width=3, fig.height=3}
+mixture_dat <- gen.mixture(21,5)
+
+eps_ilr <-0.02
+
+xx <- ilr_bounded_minmax_additive(as.matrix(mixture_dat),
+                                  b = 0,
+                                  epsilon = eps_ilr,
+                                  method = "basic")
+
+xx$z_min
+xx$z_max
+#xx$u[1:11,]
+plot(xx$u)
+
+xp <- seq(0,1, by = 0.01)
+bin_xx <- tibble(X1 = 0,X2 = 0,X3 = 0,
+                 X4 = xp,
+                 X5 = 1 - xp)
+
+bin_xx_irl <- ilr_bounded_minmax_additive(as.matrix(bin_xx),
+                                             epsilon = eps_ilr,
+                                             z_min = xx$z_min,
+                                             z_max = xx$z_max)$u
+
+plot(bin_xx_irl[,4])
+```
 
 ```{r}
 X_ini <- as.matrix(dat_ss_train[,metals])
@@ -330,7 +335,14 @@ X_cand_ini <- as.matrix(dat_cand[,metals])
 X_cand_ini_ilr <- ilr_bounded_minmax_additive(X_cand_ini,
                                              epsilon = eps_ilr,
                                              z_min = xx$z_min,
-                                             z_max = xx$z_max)$u
+                                             z_max = xx$z_max,
+                                             method = "basic")$u
+
+X_ini_ilr <- ilr_bounded_minmax_additive(X_ini,
+                                             epsilon = eps_ilr,
+                                             z_min = xx$z_min,
+                                             z_max = xx$z_max,
+                                             method = "basic")$u
 
 X_cand_ini_B <- as.matrix(dat_ss_c_cand[,metals])
 
@@ -345,6 +357,12 @@ dat_ss_t_cand <- dat_ss_t_cand%>%
                                values_to = "val_true")
 
 ```
+
+```{r fig.width=3, fig.height=3}
+X_ini_ilr[,4] |> plot()
+X_cand_ini_ilr[,4] |> plot()
+```
+
 
 ```{r}
 set.seed(ini_seed)
@@ -617,8 +635,8 @@ for(iter in 0:5){
                                 cor_fun = cor_fun_test,
                                 phi_h = attr(eval_log_t,"psi"),
                                log_mult = c(-log(2),log(1.5), log(2)),
-                               log_bounds =c(-Inf, Inf,
-                                         log(5))
+                               log_bounds =c(-log(20), log(5),
+                                         log(25))
                                )
     }
     
@@ -666,9 +684,9 @@ for(iter in 0:5){
                             cor_fun = cor_fun_test,
                             phi_h = attr(eval_log_c,"psi"),
                            log_mult = c(-log(2),log(1.5), log(2)),
-                           log_bounds =c(-Inf,
-                                         Inf,
-                                         log(5))
+                           log_bounds =c(-log(20),
+                                         log(5),
+                                         log(25))
                            )
     }
     
@@ -808,7 +826,7 @@ for(iter in 0:5){
 ```{r}
 save(np_id_h,
      file = here::here("Results","Fixed Data",
-                       "ALV2_26_prior_gam_np_h_pol_m52.RData"))
+                       "ALV2_26_prior_gam_np_h_int_m32.RData"))
 
 ```
 
