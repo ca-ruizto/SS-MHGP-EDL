@@ -1,5 +1,46 @@
 ### Multivariate IMSPE #####
 
+Wij_int <- function(X, X2 = NULL,
+                    theta, cov_fun){
+  
+  if(is.null(X2)){
+    n_row <- length(X)
+    out <- matrix(0, nrow = n_row, ncol = n_row)
+    for(i in 1:n_row){
+      for(j in i:n_row){
+        int_f <- function(x) cov_fun( abs(x-X[i])/theta ) * cov_fun(abs(x-X[j])/theta)
+        int_val <- cubature::hcubature(int_f, lowerLimit = 0, upperLimit = 1)
+        out[i,j] <- out[j,i] <- int_val$integral
+      }
+    }
+  }else{
+    n_row <- length(X)
+    n_col <- length(X2)
+    out <- matrix(0, nrow = n_row, ncol = n_col)
+    for(i in 1:n_row){
+      for(j in 1:n_col){
+        int_f <- function(x) cov_fun( abs(x-X[i])/theta ) * cov_fun(abs(x-X2[j])/theta)
+        int_val <- cubature::hcubature(int_f, lowerLimit = 0, upperLimit = 1)
+        out[i,j] <- int_val$integral
+      }
+    }
+  }
+  
+  return(out)
+}
+
+Wij_int_mv <- function(X, X2 = NULL, theta, cov_fun){
+  n_dim <- ncol(X)
+  W <- 1
+  if(is.null(X2)){
+    for(i in 1:n_dim) W <- W * Wij_int(X[,i], theta = theta[i], cov_fun = cov_fun)
+  }else{
+    for(i in 1:n_dim) W <- W * Wij_int(X[,i], X2[,j],
+                                       theta = theta[i], cov_fun = cov_fun)
+  }
+  
+  return(W)
+}
 
 Wij_mv <- function(X, X2 = NULL, theta, 
                    scale_factor  = 1, 
@@ -14,7 +55,7 @@ Wij_mv <- function(X, X2 = NULL, theta,
   
   wij <- 1
   
-  if(cov_type == "Gaussian") th <- sqrt(th)
+  if(cov_type == "Gaussian") th <- th ^ 2
   
   for(i in 1:n_dim){
     wij <- wij * hetGP::Wij(mu1 = matrix(X_in[,i] , ncol = 1),
@@ -93,25 +134,6 @@ IMSPE_MV2 <- function(pred_obj, scale_factor = 1){
   pred_obj$tau * result *sfn
 }
 
-IMSPE_MV_Sampling <- function(pred_obj, n_points = 25, scale_factor = 1){
-  n_dim <- pred_obj$theta |> length()
-  x <- seq(0, 1, length = n_points + 2)
-  x <- x[-c(1, n_points + 2)]
-  x_list = list(var1 = x)
-  for(i in 2:n_dim) x_list[[paste0("var", i)]] <- x
-  X_new <- expand.grid(x_list,
-                       KEEP.OUT.ATTRS = FALSE)
-  
-  sd2_pred <- predict_mv_het_gp_fun(newX = X_new,
-                                    pred_obj = pred_obj,
-                                    sd2_only = T)
-  
-  sd2_pred <- matrix(sd2_pred,
-                     ncol = pred_obj$n_properties,
-                     byrow = T)
-  
-  return(sum(sd2_pred) / (n_points ^ n_dim) )
-}
 
 IMSPE_MV_NI <- function(pred_obj, max_eval = 1e5, return_object = F ){
   n_dim <- pred_obj$theta |> length()
@@ -135,6 +157,31 @@ IMSPE_MV_NI <- function(pred_obj, max_eval = 1e5, return_object = F ){
   return(int_result$integral )
 }
 
+IMSPE_MV_Adjust <- function(pred_obj, accuracy = 0.01){
+  imspe <- IMSPE_MV(pred_obj = pred_obj) # analytical
+  
+  a <- IMSPE_MV_NI(pred_obj = pred_obj, #rough integral
+                           max_eval = 1e2,
+                   return_object = T)
+  
+  if(abs(imspe - a$integral) < a$error) return(imspe)
+  
+  b <- IMSPE_MV_NI(pred_obj = pred_obj, #improved estimate, assuming log reduction in error
+                   max_eval = 1e3,
+                   return_object = T)
+  
+  if(b$error < accuracy) return(b$integral)
+  
+  aa <- log(b$error) - log(a$error)
+  nn <- (log(accuracy) - log(a$error)) / aa + 2
+  
+  b <- IMSPE_MV_NI(pred_obj = pred_obj, #final estimate
+                   max_eval = 10^nn,
+                   return_object = F)
+  
+  return(b)
+}
+
 cIMSPE_MV <- function(x, pred_obj, 
                       id = NULL, reps =1,
                       scale_factor = 1,
@@ -154,7 +201,7 @@ cIMSPE_MV <- function(x, pred_obj,
   
   n_properties <- pred_obj$n_properties
   
-  Wijs_mv <- kronecker(Wijs,pred_obj$Sig^2)
+  Wijs_mv <- kronecker(Wijs,pred_obj$Sig %*% pred_obj$Sig)
   Ki <- pred_obj$Ki 
   sfn <- scale_factor^pred_obj$n_properties
   if(!is.null(id)){
@@ -180,13 +227,13 @@ cIMSPE_MV <- function(x, pred_obj,
                     scale_factor = scale_factor,
                     cov_type = pred_obj$cov_type)
   newWijs <- kronecker(newWijs,
-                       pred_obj$Sig^2)
+                       pred_obj$Sig %*% pred_obj$Sig)
   
   W11 <- Wij_mv(X2 = x, X = x, 
                 theta = pred_obj$theta, 
                 scale_factor = scale_factor,
                 cov_type = pred_obj$cov_type)
-  W11 <- kronecker(W11, pred_obj$Sig^2)
+  W11 <- kronecker(W11, pred_obj$Sig %*% pred_obj$Sig)
   
   D <- mv_dist_fun(X=x,X2=pred_obj$X0)
   

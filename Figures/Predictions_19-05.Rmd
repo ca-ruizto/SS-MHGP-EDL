@@ -691,7 +691,7 @@ dat_comp%>%
 ```{r}
 file_name <- paste0("train_bin_rl_prior_gam_",
                           "pol", "_", "m32",
-                          "_2026_05_19_RLV2_iter_",1,".RData")
+                          "_2026_05_19_RLV2_iter_",0,".RData")
       
       fp <- here::here("Results",
                        "Fixed Data",
@@ -716,23 +716,9 @@ for(p in n_pol){
   val <- numeric(0)
   val_int[k] <- IMSPE_MV(pol[[p]])
   val_ni[k] <- IMSPE_MV_NI(pol[[p]], max_eval = 10^4)
-  
-  dat_ls[[k]] <- tibble(length_scale = exp(pol[[p]]$theta ),
-                        dimension = 1:length(pol[[p]]$theta),
-                        Model = p)
-  
-  for(i in np_vals){
-    message(paste("N-points", i, "at", Sys.time()))
-    val <- c(val, IMSPE_MV_Sampling(pol[[p]],
-                             n_points = i))
-    gc()
-  }
-  imspe_samp_dat[[k]] <- tibble(imspe = val ,
-                                Model = p,
-                                n_samples = np_vals)
+
 }
 
-imspe_samp_dat <- bind_rows(imspe_samp_dat)
 impse_analytical <- tibble(imspe = val_int,
                            Model = n_pol)
 impse_ni <- tibble(imspe = val_ni,
@@ -759,7 +745,7 @@ plot_bad
 
 ```{r}
 file_name <- paste0("train_bin_rl_prior_gam_",
-                          "int", "_", "m32",
+                          "pol", "_", "m32",
                           "_2026_05_19_RLV2_iter_",1,".RData")
       
       fp <- here::here("Results",
@@ -769,77 +755,48 @@ file_name <- paste0("train_bin_rl_prior_gam_",
 load(fp)
 ```
 
-```{r}
-n_pol <- c("Tension-Hom","Compression-Hom", "Tension","Compression")
 
-imspe_samp_dat <- vector(mode = "list")
-dat_ls <- vector(mode = "list")
-val_int <- val_ni <- numeric(4)
-k <- 0
-np_vals <- c(3,5,10)
-for(p in n_pol){
-  message(paste("Starting", p, "at", Sys.time()))
-  k <- k + 1
-  val <- numeric(0)
-  val_int[k] <- IMSPE_MV(pol[[p]])
-  val_ni[k] <- IMSPE_MV_NI(pol[[p]], max_eval = 10^4)
-  
-  dat_ls[[k]] <- tibble(length_scale = exp(pol[[p]]$theta ),
-                        dimension = 1:length(pol[[p]]$theta),
-                        Model = p)
-  
-  for(i in np_vals){
-    message(paste("N-points", i, "at", Sys.time()))
-    val <- c(val, IMSPE_MV_Sampling(pol[[p]],
-                             n_points = i))
-    gc()
-  }
-  imspe_samp_dat[[k]] <- tibble(imspe = val ,
-                                Model = p,
-                                n_samples = np_vals)
+
+
+```{r}
+np <- 3
+
+a <- IMSPE_MV( pol[[np]])
+
+b <- IMSPE_MV_NI(pol[[np]], max_eval = 1e2, return_object = T)
+a
+b
+
+abs(a - b$integral) < b$error
+
+err_v <- rep(0,4)
+err_v[1] <- b$error
+
+for(i in 2:4){
+  d <- IMSPE_MV_NI(pol[[np]], max_eval = 10^(i + 1), return_object = T)
+  err_v[i] <- d$error
 }
 
-imspe_samp_dat <- bind_rows(imspe_samp_dat)
-impse_analytical <- tibble(imspe = val_int,
-                           Model = n_pol)
-impse_ni <- tibble(imspe = val_ni,
-                           Model = n_pol)
-
-dat_ls <- bind_rows(dat_ls)
-```
-
-```{r fig.height=3, fig.width=9}
-plot_int <- imspe_samp_dat%>%
-  ggplot()+
-  geom_line(aes(x = n_samples,
-                y = imspe))+
-  geom_hline(aes(yintercept = imspe ),
-             data = impse_analytical,
-             color = "red")+
-  geom_hline(aes(yintercept = imspe ),
-             data = impse_ni,
-             color = "blue")+
-  facet_wrap(~Model,scales = "free")
-
-gridExtra::grid.arrange(plot_int, plot_bad, nrow = 1)
-```
-
-```{r}
-p <- "Tension"
-IMSPE_MV2( pol[[4]])
-
-IMSPE_MV( pol[[4]])
-
-IMSPE_MV_NI(pol[[4]], max_eval = 3e4, return_object = F)
+plot(err_v)
+#IMSPE_MV_NI(pol[[np]], max_eval = 3e4, return_object = F)
 
 
 ```
 
-```{r imspe_al, fig.height=3, fig.width=6}
+```{r imspe_al, fig.height=4, fig.width=6}
 impse_dat%>%
-  #filter(mean_type == "int")%>%
-  mutate(Type = factor(Type,
-                       levels  = c("Tension","Compression")),
+  bind_rows(impse_dat_hom)%>%
+  filter(impse < 1e4)%>%
+  mutate(Model_Type = factor(Type,
+                       levels  = c("Tension","Compression",
+                                   "Tension-Hom","Compression-Hom"),
+                       labels = c("Het","Het",
+                                  "Hom","Hom")),
+         Test_Type = factor(Type,
+                       levels  = c("Tension","Compression",
+                                   "Tension-Hom","Compression-Hom"),
+                       labels = c("Tension","Compression",
+                                  "Tension","Compression")),
          Kernel = factor(Kernel,
                          levels = kernels_v,
                          labels = c("M 3/2", "M 5/2")),
@@ -848,17 +805,18 @@ impse_dat%>%
                             labels = c("Constant", "Linear")))%>%
   ggplot(aes(x= iter,
              y= impse,
-             colour = Type,
+             colour = Model_Type,
              linetype = Kernel))+
   geom_line(linewidth = 1.25)+
   # scale_color_brewer("Property",
   #                    labels = prop_ltx,
   #                    palette = "Dark2")+
-  scale_color_brewer("Test", palette = "Dark2")+
-  facet_grid(~mean_type,
+  scale_color_brewer("Error", palette = "Dark2")+
+  facet_grid(Test_Type~mean_type,
              scales = "free")+
   labs(y = "IMSPE",
        x = "Iteration",
+       linetype = "Kernel",
        title="IMSPE During the AL Algorithm")+
   theme(legend.position = "bottom",
         axis.text.x = element_text(size = 12),
@@ -867,37 +825,7 @@ impse_dat%>%
     guides(colour = guide_legend(nrow = 1))
 ```
 
-```{r imspe_al_hom, fig.height=3, fig.width=6}
-impse_dat_hom%>%
-  mutate(Type = factor(Type,
-                       levels  = c("Tension-Hom","Compression-Hom"),
-                       labels  = c("Tension","Compression")),
-         Kernel = factor(Kernel,
-                         levels = kernels_v,
-                         labels = c("M 3/2", "M 5/2")),
-         mean_type = factor(mean_type,
-                            levels = c("int","pol"),
-                            labels = c("Constant", "Linear")))%>%
-  ggplot(aes(x= iter,
-             y= impse,
-             colour = Type,
-             linetype = Kernel))+
-  geom_line(linewidth = 1.25)+
-  # scale_color_brewer("Property",
-  #                    labels = prop_ltx,
-  #                    palette = "Dark2")+
-  scale_color_brewer("Test", palette = "Dark2")+
-  facet_grid(~mean_type,
-             scales = "free")+
-  labs(y = "IMSPE",
-       x = "Iteration",
-       title="IMSPE During the AL Algorithm")+
-  theme(legend.position = "bottom",
-        axis.text.x = element_text(size = 12),
-        legend.text = element_text(size=10),
-        legend.title = element_text(size =10))+ 
-    guides(colour = guide_legend(nrow = 1))
-```
+
 
 
 ### Predictions NN

@@ -1220,11 +1220,12 @@ import_predict_mod_het_gp_fun <- function(newX,Xdesign,newX_pred = NULL,file_pat
                                           n_funs = 4,
                                           prop_names){
   load(file_path)
+  imspe <- IMSPE_MV_Adjust(pred_obj = pol[[mod_id]])
+
   
   pred <- predict_mv_het_gp_fun(newX = newX,
                                 newX_pred = newX_pred,
                                 pred_obj = pol[[mod_id]])
-  imspe <- IMSPE_MV(pred_obj = pol[[mod_id]])
   
   gc()
   
@@ -1304,7 +1305,7 @@ import_predict_mod_gp_sampling_fun <- function(newX,Xdesign,
                                   pred_obj = pol[[mod_id]])
   }
   
-  imspe <- IMSPE_MV(pred_obj = pol[[mod_id]])
+  imspe <- IMSPE_MV_Adjust(pred_obj = pol[[mod_id]])
   tau <- pol[[mod_id]]$tau
   sum_S <- sum(diag(pol[[mod_id]]$Sig))
   
