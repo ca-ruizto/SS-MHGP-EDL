@@ -305,13 +305,20 @@ predict_ss_curve_fun <- function(mu_gp, var_gp, n_points = 1e2,
   
 }
 
+col_medians_fun <- function(X){
+  out <- rep(0, ncol(X))
+  for(i in 1:ncol(X)) out[i] <- median(X[,i], na.rm = T)
+  
+  return(out)
+}
 
 predict_ss_curve_sampling_fun <- function(mu_gp, var_gp,
                                           n_points = 1e2,
                                           n_log_s = 1e2,
                                           n_cond_s = 1e2,
                                           a_prob = 0.05,
-                                          max_strain = 0.2){
+                                          max_strain = 0.2,
+                                          pred_type = "mean"){
   
   n_funs <- ncol(mu_gp) - 1
   n_alloys <- nrow(mu_gp)
@@ -367,7 +374,12 @@ predict_ss_curve_sampling_fun <- function(mu_gp, var_gp,
       
     }
     
-    out_mean[,i] <- colSums(sample_stress, na.rm = T)/n_ts
+    if(pred_type == "mean"){
+      out_mean[,i] <- colSums(sample_stress, na.rm = T)/n_ts
+    }else{
+      out_mean[,i] <- col_medians_fun(sample_stress)
+    }
+    
     
     for(k in 1:n_points){
       sq <- quantile(sample_stress[,k], 

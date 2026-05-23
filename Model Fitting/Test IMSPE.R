@@ -100,3 +100,97 @@ IMSPE_MV(pred_obj)
 IMSPE_MV_NI(pred_obj)
 
 
+```{r}
+file_name <- paste0("train_bin_rl_prior_gam_",
+                    "pol", "_", "m32",
+                    "_2026_05_19_RLV2_iter_",0,".RData")
+
+fp <- here::here("Results",
+                 "Fixed Data",
+                 file_name)
+
+load(fp)
+```
+
+Test one case with negative imspe
+
+```{r}
+n_pol <- c("Tension-Hom","Compression-Hom", "Tension","Compression")
+
+imspe_samp_dat <- vector(mode = "list")
+dat_ls <- vector(mode = "list")
+val_int <- val_ni <- numeric(4)
+k <- 0
+np_vals <- c(3,5,10)
+for(p in n_pol){
+  message(paste("Starting", p, "at", Sys.time()))
+  k <- k + 1
+  val <- numeric(0)
+  val_int[k] <- IMSPE_MV(pol[[p]])
+  val_ni[k] <- IMSPE_MV_NI(pol[[p]], max_eval = 10^4)
+  
+}
+
+impse_analytical <- tibble(imspe = val_int,
+                           Model = n_pol)
+impse_ni <- tibble(imspe = val_ni,
+                   Model = n_pol)
+
+dat_ls <- bind_rows(dat_ls)
+```
+
+```{r fig.height=3, fig.width=6}
+plot_bad <- imspe_samp_dat%>%
+  ggplot()+
+  geom_line(aes(x = n_samples,
+                y = imspe))+
+  geom_hline(aes(yintercept = imspe ),
+             data = impse_analytical,
+             color = "red")+
+  geom_hline(aes(yintercept = imspe ),
+             data = impse_ni,
+             color = "blue")+
+  facet_wrap(~Model,scales = "free")
+
+plot_bad
+```
+
+```{r}
+file_name <- paste0("train_bin_rl_prior_gam_",
+                    "pol", "_", "m32",
+                    "_2026_05_19_RLV2_iter_",1,".RData")
+
+fp <- here::here("Results",
+                 "Fixed Data",
+                 file_name)
+
+load(fp)
+```
+
+
+
+
+```{r}
+np <- 3
+
+a <- IMSPE_MV( pol[[np]])
+
+b <- IMSPE_MV_NI(pol[[np]], max_eval = 1e2, return_object = T)
+a
+b
+
+abs(a - b$integral) < b$error
+
+err_v <- rep(0,4)
+err_v[1] <- b$error
+
+for(i in 2:4){
+  d <- IMSPE_MV_NI(pol[[np]], max_eval = 10^(i + 1), return_object = T)
+  err_v[i] <- d$error
+}
+
+plot(err_v)
+#IMSPE_MV_NI(pol[[np]], max_eval = 3e4, return_object = F)
+
+
+```
