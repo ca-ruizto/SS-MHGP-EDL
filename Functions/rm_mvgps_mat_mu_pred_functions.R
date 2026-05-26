@@ -124,16 +124,17 @@ compute_mean_var_fun <- function(Y, a_mult, rescale_y = "after"){
     Y <- (Y %r-% rs_mean) %r/% rs_mult
   } 
   
-  out <- compute_mean_var_internal(Y=Y,
-                                   a_mult = a_mult,
-                                   n_prop =n_prop,
-                                   n_unique = n_unique)
-  
-  
-  Yb <- matrix(out$y_bar,
-               nrow = n_unique,
-               byrow = T)
   if(rescale_y == "after"){
+    out <- compute_mean_var_internal(Y=Y,
+                                     a_mult = a_mult,
+                                     n_prop =n_prop,
+                                     n_unique = n_unique)
+    
+    
+    Yb <- matrix(out$y_bar,
+                 nrow = n_unique,
+                 byrow = T)
+    
     rs_mean <- colMeans(Yb)
     rs_mult <- sapply(1:ncol(Yb), function(i) sd(Yb[,i]) )
     Y <- (Y %r-% rs_mean) %r/% rs_mult
@@ -202,9 +203,10 @@ initial_delta_reg_fun <- function(var_mat, X,
   
   
   vs <- log(var_mat)
+  c_min <- sapply(1:ncol(vs), function(i) min(vs[,i], na.rm = T) )
   if(!is.null(edge_locs)){
     vs <- rbind(vs,
-                matrix(-25,nrow = nrow(edge_locs),
+                matrix(min(c_min) -5,nrow = nrow(edge_locs),
                        ncol = ncol(vs)))
   } 
   result <- uni_gp_fit_fun(vs = vs,
@@ -217,7 +219,7 @@ initial_delta_reg_fun <- function(var_mat, X,
   return(result)
 }
 
-ini_pars_hom_fun <- function(rs = NULL, n_dim,
+ini_pars_hom_fun <- function(rs = NULL, n_dim, n_prop, cov_bp = "independent",
                             prior_mean = NULL,
                              prev_pars = NULL,
                              log_bounds = log(c(1e-2,2,50))){
@@ -226,12 +228,26 @@ ini_pars_hom_fun <- function(rs = NULL, n_dim,
     tmp <- log(rs$var_y[1])
     g <- log(rs$var_rep) - tmp
     s <- log(rs$var_y[-1]) - tmp
+    s_lb <- s - log_bounds[3]
+    s_ub <- s+ log_bounds[3]
+    g_lb <- g - log_bounds[3]
+    
+    if(cov_bp != "independent"){
+      n_off <- n_prop * (n_prop + 1) / 2 - n_prop 
+      s <- c(s,rep(0, n_off))
+      s_lb <- c(s_lb,rep(-2,n_off))
+      s_ub <- c(s_ub, rep(2,n_off))
+    }
   }else{
-    n_prop <- length(prev_pars) - n_dim
-    n_prop <- ceiling(n_prop/2)
-    g <- prev_pars[1:n_prop + n_dim]
-    s <- prev_pars[1:(n_prop-1) + n_dim + n_prop]
+    n_cov_pars <- n_prop
+    if(cov_bp != "independent"){
+      n_cov_pars <- n_prop * (n_prop + 1) / 2
+    }
+    s <- prev_pars[n_dim + 1:(n_cov_pars -1)]
+    g <- prev_pars[ 1:(n_prop)+ n_dim + n_cov_pars -1]
   }
+  
+
   
   if(is.null(prior_mean)){
     ini_sol <- rep(log(0.5),n_dim)
@@ -246,11 +262,8 @@ ini_pars_hom_fun <- function(rs = NULL, n_dim,
   
   ini_sol <- c(ini_sol,
                 s,g)
-  lb <- c(lb,
-          s - log_bounds[3],
-          g - log_bounds[3])
-  ub <- c(ub,
-          s + log_bounds[3],
+  lb <- c(lb,s_lb,g_lb)
+  ub <- c(ub, s_ub,
           g + log_bounds[3])
   
   
@@ -290,6 +303,7 @@ update_ini_pars_fun <- function(new_ini, ini_sol, log_bounds = log(2)){
 
 pars_hom_to_het_reg <- function(hom_pars,
                             n_properties, 
+                            cov_bp = "independent",
                             var_mat,X,pX,idx_use,
                             cor_fun,
                             phi_h,
@@ -301,12 +315,28 @@ pars_hom_to_het_reg <- function(hom_pars,
   #length scale and cov of mean process
   n_dim <- ncol(X)
   hp1 <- hom_pars[1:n_dim]
-  hp2 <- hom_pars[1:(n_properties-1) + n_dim]
-  low_b <- c(rep(log_bounds[1],n_dim),
-             hp2 - log_bounds[3])
-  upp_b <- c(rep(log_bounds[2],n_dim),
-             hp2 + log_bounds[3])
+  
+  n_cov_pars <- n_properties
+  
+  if(cov_bp != "independent"){
+    n_cov_pars <- n_properties * (n_properties + 1) / 2
+    hp2 <- hom_pars[1:(n_cov_pars-1) + n_dim]
+    low_b <- c(rep(log_bounds[1],n_dim),
+               rep(-Inf, n_properties - 1),
+               rep(-2, length(hp2) - n_properties + 1 ))
+    upp_b <- c(rep(log_bounds[2],n_dim),
+               rep(Inf, n_properties - 1),
+               rep(2, length(hp2) - n_properties + 1 ))
+  }else{
+    hp2 <- hom_pars[1:(n_cov_pars-1) + n_dim]
+    low_b <- c(rep(log_bounds[1],n_dim),
+               hp2 - log_bounds[3])
+    upp_b <- c(rep(log_bounds[2],n_dim),
+               hp2 + log_bounds[3])
+    
+  } 
   het_pars <- c(hp1, hp2)
+  
   
   #reg solution
   #check if phi should be multiplied or divided
@@ -322,12 +352,8 @@ pars_hom_to_het_reg <- function(hom_pars,
   
   tau_t <- result$tau*result$g
   g_t <- result$tau
-  hp3 <- log(c(tau_t,g_t)) #thg
   
-  het_pars <- c(het_pars,
-                hp1 + result$thm,
-                hp3)
-                
+  hp3 <- log(c(tau_t,g_t)) #thg
   low_b <- c(low_b,
              rep(log_bounds[1],n_dim),
              hp3 - log_bounds[3])
@@ -335,6 +361,11 @@ pars_hom_to_het_reg <- function(hom_pars,
   upp_b <- c(upp_b,
              rep(log_bounds[2],n_dim),
              hp3 + log_bounds[3])
+  
+  
+  het_pars <- c(het_pars,
+                hp1 + result$thm,
+                hp3)
   
   #Delta
   delta_ini <- as.vector(t(result$Delta))
@@ -356,9 +387,10 @@ pars_hom_to_het_reg <- function(hom_pars,
 
 log_chol_fun <- function(par,n_dim){
   #returns a correlation matrix under log-chol parameterization
-  L <- Diagonal(x = exp(par[1:n_dim]))
-  
+  L <- diag(exp(par[1:n_dim]))
   L[lower.tri(L)] <- par[-(1:n_dim)]
+  L <- Matrix(L, sparse = T)
+  
   return(tcrossprod(L))
 }
 
@@ -411,7 +443,7 @@ log_like_mv_het_spa_gp_fun <- function(D0, X_pred,X_pred_all,
   
   # Temporarily store Cholesky transform of K in Ki
   
-  Sig_sv <- cov_fun(theta_cov_sv)
+  Sig_sv <- log_chol_diag_spa_fun(theta_cov_sv)
   
   
   if(is.null(dX)){
@@ -606,7 +638,7 @@ fit_mvgp_sv_fun <- function(Y,X,
                             pX = NULL,a_mult_px = NULL, 
                             n_edge = 0,
                             cor_fun,cor_sv_fun = NULL,
-                            cov_fun = log_chol_diag_spa_fun,
+                            cov_bp = "independent", # covariance between processes
                             prior_theta = NULL,
                             het_sv = T,
                             ini_pars , ub = NULL,lb = NULL,
@@ -622,11 +654,12 @@ fit_mvgp_sv_fun <- function(Y,X,
   
   #parameters are covariance kernel parameters (ncols X) and parameters of Sigma 
   #kernel_function is the kernel used to compute the correlation between alloys
-  # ind_corr = T constructs Omega as a diagonal funciton.
+  # ind_corr = T constructs Omega as a diagonal function.
   # ini_pars = initial estimate, usually a vector of zeros
   # Y has multiple replications, ordered as  candidate, replication, 1 property per column
   
   ## Set up
+
   
   D_mat <- mv_dist_fun(X)
   dX_mat <- dComb_mat <- NULL
@@ -638,6 +671,7 @@ fit_mvgp_sv_fun <- function(Y,X,
   n_dim <- ncol(X)
   n_X <- nrow(X)
   n_properties <- ncol(Y)
+  
   
   if(is.null(rs)){
     rs <- compute_mean_var_fun(Y=Y,a_mult = a_mult,
@@ -652,7 +686,6 @@ fit_mvgp_sv_fun <- function(Y,X,
     rs$y_bar <- rs_new$y_bar
   }
   
-  
   y <- as.vector(t(Y))
   y_bar <- rs$y_bar
   
@@ -661,6 +694,15 @@ fit_mvgp_sv_fun <- function(Y,X,
   
   if(is.null(X_pred_all)) X_pred_all <- kronecker(rep(1,sum(a_mult)),
                                                   Diagonal(n_properties))
+  
+  # set up covariance function
+  if(cov_bp == "independent"){
+    cov_fun = log_chol_diag_spa_fun
+    n_cov_pars <- n_properties
+  }else{
+    cov_fun = function(x) log_chol_fun(x, n_dim = n_properties)
+    n_cov_pars <- n_properties * (n_properties + 1) / 2
+  }
   
   if(verbose){
     message("Starting")
@@ -673,16 +715,16 @@ fit_mvgp_sv_fun <- function(Y,X,
   nll_fun <- function(pars){
     
     th <- pars[1:n_dim]
-    th_cov <- c(0,pars[n_dim + 1:(n_properties -1)])
+    th_cov <- c(0,pars[n_dim + 1:(n_cov_pars -1)])
     th_cov_sv <- th_sv <- mts <- NULL
     
     if(het_sv){
-      idx <- n_dim + n_properties -1
+      idx <- n_dim + n_cov_pars -1
         
       th_sv <- pars[1:n_dim + idx]
-      th_cov_sv <- pars[1:n_properties + 2*n_dim + n_properties -1 ]
-      th_g <- pars[ 1:(n_properties)+ 2*n_dim + 2*n_properties -1]
-      last_idx <- 3*n_properties + 2*n_dim -1
+      th_cov_sv <- pars[1:n_properties + 2*n_dim + n_cov_pars -1 ]
+      th_g <- pars[ 1:(n_properties)+ 2*n_dim + n_properties + n_cov_pars -1]
+      last_idx <- n_cov_pars + 2*n_properties + 2*n_dim -1
       th_delta <- pars[-c(1:last_idx)]
       
       ll <- log_like_mv_het_spa_gp_fun(D0 = D_mat,
@@ -710,7 +752,7 @@ fit_mvgp_sv_fun <- function(Y,X,
       
       
     }else{
-      th_g <- pars[ 1:(n_properties)+ n_dim + n_properties -1]
+      th_g <- pars[ 1:(n_properties)+ n_dim + n_cov_pars -1]
       
       ll <- log_like_mv_hom_gp_fun(D0 = D_mat,
                                    X_pred = X_pred,
@@ -790,6 +832,7 @@ fit_mvgp_sv_fun <- function(Y,X,
     
     return(list(opt_sol = opt_sol,
                 sol_hist = sol_hist,
+                cov_bp = cov_bp,
                 Y = Y,
                 y_bar = y_bar,
                 rs_y = rescale_y,
@@ -798,6 +841,7 @@ fit_mvgp_sv_fun <- function(Y,X,
      
   }else{
     return(list(opt_sol = opt_sol,
+                cov_bp = cov_bp,
                 Y = Y,
                 y_bar = y_bar,
                 rs_y = rescale_y,
@@ -816,6 +860,7 @@ construct_pred_hom_obj_fun <- function(pars,X, Y_mat, y_bar,
                                    cor_fun_gp_sv = NULL,
                                    joint_cov= T,
                                    cov_type= "Matern5_2",
+                                   cov_bp = "independent",
                                    rescale_y=F,
                                    rs_mean = NULL,
                                    rs_mult = NULL,
@@ -825,6 +870,14 @@ construct_pred_hom_obj_fun <- function(pars,X, Y_mat, y_bar,
   y <- as.vector(t(Y_mat))
   N_obs <- length(y)/n_properties
   N_tobs <- length(y)
+  
+  if(cov_bp == "independent"){
+    cov_fun = log_chol_diag_spa_fun
+    n_cov_pars <- n_properties
+  }else{
+    cov_fun = function(x) log_chol_fun(x, n_dim = n_properties)
+    n_cov_pars <- n_properties * (n_properties + 1) / 2
+  }
   
   if(is.null(cor_fun_gp_sv) ) cor_fun_gp_sv <- cor_fun_gp
   
@@ -846,8 +899,8 @@ construct_pred_hom_obj_fun <- function(pars,X, Y_mat, y_bar,
   
   
   theta <- pars[1:n_dim]
-  theta_cov <- c(0,pars[n_dim + 1:(n_properties-1)])
-  g <- pars[ 1:n_properties + n_dim + n_properties-1]
+  theta_cov <- c(0,pars[n_dim + 1:(n_cov_pars-1)])
+  g <- pars[ 1:n_properties + n_dim + n_cov_pars-1]
   g <- exp(g)
   
   A_mult <- rep(a_mult,each = n_properties)
@@ -859,7 +912,7 @@ construct_pred_hom_obj_fun <- function(pars,X, Y_mat, y_bar,
   
   C <- cor_fun_gp(D_mat = D0, 
                   theta = theta)
-  Sig <- log_chol_diag_fun(theta_cov)
+  Sig <- cov_fun(theta_cov)
   CS <- kronecker(C,Sig)
   CS_lam <- CS + Diagonal(x = Lambda/A_mult + eps)
   Ki <- chol2inv(chol(CS_lam))
@@ -967,6 +1020,7 @@ construct_pred_obj_fun <- function(pars,X,
                                    n_edge =0 ,
                                    cor_fun_gp_sv = NULL,
                                    cov_type= "Matern5_2",
+                                   cov_bp = "independent",
                                    rescale_y=F,
                                    rs_mean = NULL,
                                    rs_mult = NULL,
@@ -976,6 +1030,14 @@ construct_pred_obj_fun <- function(pars,X,
   y <- as.vector(t(Y_mat))
   N_obs <- length(y)/n_properties
   N_tobs <- length(y)
+  
+  if(cov_bp == "independent"){
+    cov_fun = log_chol_diag_spa_fun
+    n_cov_pars <- n_properties
+  }else{
+    cov_fun = function(x) log_chol_fun(x, n_dim = n_properties)
+    n_cov_pars <- n_properties * (n_properties + 1) / 2
+  }
   
   if(is.null(X_pred)) X_pred <-  kronecker(rep(1,length(a_mult)),
                                            Diagonal(n_properties))
@@ -995,12 +1057,12 @@ construct_pred_obj_fun <- function(pars,X,
   
   #Extract parameters
   theta <- pars[1:n_dim]
-  theta_cov <- c(0,pars[n_dim + 1:(n_properties-1)])
+  theta_cov <- c(0,pars[n_dim + 1:(n_cov_pars-1)])
   theta_cov_sv <- theta_sv <- NULL
-  theta_sv <- pars[1:n_dim + n_dim + n_properties -1]
-  theta_cov_sv <- pars[1:n_properties + 2*n_dim + n_properties -1]
-  g <- pars[ 1:(n_properties)+ 2*n_dim + 2*n_properties -1]
-  last_idx <- 3*n_properties + 2*n_dim -1
+  theta_sv <- pars[1:n_dim + n_dim + n_cov_pars -1]
+  theta_cov_sv <- pars[1:n_properties + 2*n_dim + n_cov_pars -1]
+  g <- pars[ 1:(n_properties)+ 2*n_dim + n_properties + n_cov_pars -1]
+  last_idx <- n_cov_pars + 2*n_properties + 2*n_dim -1
   Delta <- pars[-c(1:last_idx)]
   g <- exp(g)
   
@@ -1080,7 +1142,7 @@ construct_pred_obj_fun <- function(pars,X,
   
   C <- cor_fun_gp(D_mat = D0, 
                   theta = theta)
-  Sig <- log_chol_diag_spa_fun(theta_cov)
+  Sig <- cov_fun(theta_cov)
   CS <- kronecker(C,Sig)
   CS_lam <- CS + Diagonal(x = Lambda/A_mult + eps)
   Ki <- chol2inv(chol(CS_lam))

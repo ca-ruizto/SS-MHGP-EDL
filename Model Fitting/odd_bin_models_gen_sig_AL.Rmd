@@ -119,21 +119,22 @@ joint_cov <- het_sv <-joint_ls_gp <- F
 max_train_iters <- 10
 scale_vars <- "after"
 al_steps <- 6
-exp_name <- "train_bin_rl_prior_gam_pol_gaus_2026_05_19"
-only_int <- F
+exp_name <- "train_bin_rl_gen_sig_prior_gam_int_m52_2026_05_25"
+only_int <- T
 ini_seed <- 233545
 np_seed <- 12143
 verbose <- F
 pen_par <- F
 prior_th <- "gam"
+sig_type <- "general"
 n_order <- 3
 ini_prev_mod <- T
-cov_type = "Gaussian" #"Gaussian", "Matern5_2", "Matern3_2"
+cov_type = "Matern3_2" #"Gaussian", "Matern5_2", "Matern3_2"
 
 
 cor_fun_test <- function(theta, D_mat) general_cor_fun(theta = theta,
                                                        D_mat = D_mat,
-                                                       kernel_fun = gaus_ker_fun) #matern_5_2_fun gaus_ker_fun
+                                                       kernel_fun = matern_5_2_fun) #matern_5_2_fun gaus_ker_fun
 ```
 
 ```{r}
@@ -432,6 +433,8 @@ Y_train_c <- matrix(y_ini_c,
                                      rescale_y = scale_vars)
 
     ini_hom_c <- ini_pars_hom_fun(result_stats_c, 
+                                  n_prop = length(properties),
+                                  cov_bp = sig_type,
                                   n_dim = n_dim,
                                   log_bounds = log(c(1e-1,4,10)),
                                   prior_mean = log(priors$ini_ls))
@@ -442,6 +445,8 @@ Y_train_c <- matrix(y_ini_c,
 
     ini_hom_t <- ini_pars_hom_fun(result_stats_t,
                                   n_dim = n_dim,
+                                  n_prop = length(properties),
+                                  cov_bp = sig_type,
                                   log_bounds = log(c(1e-1,4,10)),
                                   prior_mean = log(priors$ini_ls))
 ```
@@ -534,13 +539,15 @@ for(iter in 0:5){
     ini_sol_h <- ini_hom_c$ini
     if(iter>0) ini_hom_c <- update_ini_pars_fun(mod_hom_c$opt_sol$solution,
                                      ini_hom_c)
-    
+    message("Homogeneous Compression")
+    message(Sys.time())
     mod_hom_c <- fit_mvgp_sv_fun(Y = Y_train_c,
                             X = X_train_ilr,
                             X_pred = Basis_X,
                             X_pred_all = Basis_X_all,
                             a_mult = a_reps,
                             cor_fun = cor_fun_test,
+                            cov_bp = sig_type,
                             joint_cov = joint_cov,
                             het_sv = F,
                             lb = ini_hom_c$lb,
@@ -558,6 +565,7 @@ for(iter in 0:5){
                         X_pred = Basis_X,
                             X_pred_all = Basis_X_all,
                         a_mult = a_reps,
+                        cov_bp = sig_type,
                         cor_fun = cor_fun_test,
                         joint_cov = joint_cov,
                         het_sv = F,
@@ -571,6 +579,8 @@ for(iter in 0:5){
     
     if(iter>0) ini_hom_t <- update_ini_pars_fun(mod_hom_t$opt_sol$solution,
                                      ini_hom_t)
+    message("Homogeneous Tension")
+    message(Sys.time())
     
     mod_hom_t <- fit_mvgp_sv_fun(Y = Y_train_t,
                             X = X_train_ilr,
@@ -579,6 +589,7 @@ for(iter in 0:5){
                             a_mult = a_reps,
                             cor_fun = cor_fun_test,
                             joint_cov = joint_cov,
+                            cov_bp = sig_type,
                             het_sv = F,
                             lb = ini_hom_t$lb,
                             ub = ini_hom_t$ub,
@@ -597,6 +608,7 @@ for(iter in 0:5){
                             X_pred_all = Basis_X_all,
                             a_mult = a_reps,
                             cor_fun = cor_fun_test,
+                            cov_bp = sig_type,
                             joint_cov = joint_cov,
                             het_sv = F,
                             ini_pars = mod_hom_t$opt_sol$solution,
@@ -629,6 +641,7 @@ for(iter in 0:5){
                                n_properties = n_prop,
                                pX = test_pX_ilr,
                                X = X_train_ilr,
+                               cov_bp = sig_type,
                                edge_locs = pX_edge_ilr,
                                var_mat = result_stats_t$var_mat,
                                idx_use = result_stats_t$idx,
@@ -651,6 +664,7 @@ for(iter in 0:5){
                         a_mult_px = am_px,
                         n_edge = n_ed,
                         cor_fun = cor_fun_test,
+                        cov_bp = sig_type,
                         joint_cov = joint_cov,
                         het_sv = T,
                         ini_pars = ini_sol_t$ini,
@@ -678,6 +692,7 @@ for(iter in 0:5){
                            n_properties = n_prop,
                            pX = test_pX_ilr,
                            X = X_train_ilr,
+                           cov_bp = sig_type,
                            edge_locs = pX_edge_ilr,
                            var_mat = result_stats_c$var_mat,
                            idx_use = result_stats_c$idx,
@@ -699,6 +714,7 @@ for(iter in 0:5){
                             a_mult = a_reps,
                             pX = test_pXB_ilr,
                             a_mult_px =am_px,
+                            cov_bp = sig_type,
                             n_edge = n_ed,
                             cor_fun = cor_fun_test,
                             joint_cov = joint_cov,
@@ -716,6 +732,8 @@ for(iter in 0:5){
                             prior_theta = priors$pf)
     
     ## Prediction object
+    message("Predictive Objects")
+    message(Sys.time())
     
     test_pred_obj_t <- construct_pred_obj_fun(pars = mod_t$opt_sol$solution,
                                         X = X_train_ilr,
@@ -731,6 +749,7 @@ for(iter in 0:5){
                                         #eps = 1e-7,
                                         cor_fun_gp = cor_fun_test,
                                         cov_type = cov_type,
+                                        cov_bp = sig_type,
                                         rescale_y = mod_t$rs_y,
                                         rs_mean = mod_t$rs_mean,
                                         rs_mult = mod_t$rs_mult)
@@ -749,6 +768,7 @@ for(iter in 0:5){
                                             #eps = 1e-7,
                                             cor_fun_gp = cor_fun_test,
                                             cov_type = cov_type,
+                                            cov_bp = sig_type,
                                             rescale_y = mod_c$rs_y,
                                             rs_mean = mod_c$rs_mean,
                                             rs_mult = mod_c$rs_mult)
@@ -763,6 +783,7 @@ for(iter in 0:5){
                                                       a_mult = a_reps,
                                                       cor_fun_gp = cor_fun_test,
                                                       cov_type = cov_type,
+                                                      cov_bp = sig_type,
                                                       rescale_y = mod_hom_c$rs_y,
                                                       rs_mean = mod_hom_c$rs_mean,
                                                       rs_mult = mod_hom_c$rs_mult)
@@ -777,6 +798,7 @@ for(iter in 0:5){
                                                       a_mult = a_reps,
                                                       cor_fun_gp = cor_fun_test,
                                                       cov_type = cov_type,
+                                                      cov_bp = sig_type,
                                                       rescale_y = mod_hom_t$rs_y,
                                                       rs_mean = mod_hom_t$rs_mean,
                                                       rs_mult = mod_hom_t$rs_mult)
@@ -822,15 +844,17 @@ for(iter in 0:5){
   np_id_h <- c(np_id_h, 
                which.min(rdist::cdist(next_point$best_obj$par,X_cand_ini_ilr)))
   
+  save(np_id_h,
+     file = here::here("Results","Fixed Data",
+                       "ALV2_26_prior_gam_np_h_gen_sig_int_m52.RData"))
+  
 }
 
 
 ```
 
 ```{r}
-save(np_id_h,
-     file = here::here("Results","Fixed Data",
-                       "ALV2_26_prior_gam_np_h_pol_gaus.RData"))
+
 
 ```
 
