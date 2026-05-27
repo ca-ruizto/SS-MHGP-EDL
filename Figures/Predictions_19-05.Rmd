@@ -324,8 +324,27 @@ for(mt in mean_type){
     
   }
 }
+np_id_h_all <- sort(unique(np_id_h_all))
+length(np_id_h_all)
+
+for(mt in mean_type){
+  for(kt in kernels_v){
+    fn <- paste0("ALV2_26_prior_gam_np_h_gen_sig_", mt, "_", kt, ".RData")
+    fp <- here::here("Results","Fixed Data",
+                       fn)
+    
+    if(file.exists(fp)){
+      load(fp)
+      np_id_h_all <- c(np_id_h_all, 
+                       np_id_h)
+                       #np_id_h[-length(np_id_h)])
+    }
+    
+  }
+}
 
 np_id_h_all <- sort(unique(np_id_h_all))
+length(np_id_h_all)
 
 id_rl <- dat_cand$alloy_cnt[np_id_h_all]
 
@@ -528,6 +547,189 @@ dat_pm_hom <- bind_rows(dat_pm_hom)
 dat_lb_hom <- bind_rows(dat_lb_hom)
 dat_ub_hom <- bind_rows(dat_ub_hom)
 impse_dat_hom <- bind_rows(impse_dat_hom)
+
+ft <- Sys.time()
+print(ft - st)
+```
+
+```{r}
+st <- Sys.time()
+
+dat_mu_gen <- dat_lb_gen <- dat_ub_gen <- dat_var_gen <- 
+  dat_nug_gen <- dat_pm_gen <- vector(mode = "list",  length = 2)
+
+mods <- c("Tension", "Compression")
+
+pred_type = "median" # mean or median
+
+k <- 0
+impse_dat_gen <- vector(mode = "list")
+
+for(mt in mean_type){
+  BX <- NULL
+  if(mt == "pol") BX <- Basis_X_pred
+  message(Sys.time())
+  for(kt in kernels_v){
+    for(i in 0:5){
+      mod_name <- paste(mt, kt, sep="_")
+      file_name <- paste0("train_bin_rl_gen_sig_prior_gam_",
+                          mt, "_", kt,
+                          "_2026_05_25_RLV2_iter_",i,".RData")
+      
+      fp <- here::here("Results",
+                       "Fixed Data",
+                       file_name)
+      
+      if(file.exists(fp)){
+        for(j in mods){
+          k <- k + 1
+           results <- import_predict_mod_gp_sampling_fun(newX = X_pred_irl,
+                                                 Xdesign = dat_pred[,c(metals,"alloy_cnt")],
+                                                 newX_pred = BX,
+                                                 file_path = fp,
+                                                 step_id = mod_name,
+                                                 mod_id = j,
+                                                 rseed = 1323,
+                                                 n_funs = length(properties) - 1,
+                                                 n_samples = 1e4,
+                                                 prop_names = properties,
+                                                 pred_type = pred_type)
+           
+           #pareto_mean <- pareto_scores_prop_fun(as.matrix(results$mp_preds$mean))
+        
+            gc()
+           
+           #results$mp_mean$pareto_score = pareto_mean$pareto_score
+           dat_mu_gen[[k]] <- results$gp_mu %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_var_gen[[k]] <- results$gp_var %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_nug_gen[[k]] <- results$gp_nug %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_pm_gen[[k]] <- results$mp_mean %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_lb_gen[[k]] <- results$mp_lb %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_ub_gen[[k]] <- results$mp_ub %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           impse_dat_gen[[k]] <- tibble(impse = results$imspe,
+                                    iter = i,
+                                    Model = mod_name,
+                                    mean_type = mt,
+                                    Kernel = kt,
+                                    Type = j)
+        }
+      }
+      
+    }
+  }
+}
+
+
+dat_mu_gen <- bind_rows(dat_mu_gen)
+dat_var_gen <- bind_rows(dat_var_gen)
+dat_nug_gen <- bind_rows(dat_nug_gen)
+dat_pm_gen <- bind_rows(dat_pm_gen)
+dat_lb_gen <- bind_rows(dat_lb_gen)
+dat_ub_gen <- bind_rows(dat_ub_gen)
+impse_dat_gen <- bind_rows(impse_dat_gen)
+
+ft <- Sys.time()
+print(ft - st)
+```
+
+```{r}
+st <- Sys.time()
+
+dat_mu_hom_gen <- dat_lb_hom_gen <- dat_ub_hom_gen <- dat_var_hom_gen <- 
+  dat_nug_hom_gen <- dat_pm_hom_gen <- vector(mode = "list", length = 2)
+
+mods <- c("Tension-Hom", "Compression-Hom")
+
+k <- 0
+impse_dat_hom <- vector(mode = "list")
+
+for(mt in mean_type){
+  BX <- NULL
+  if(mt == "pol") BX <- Basis_X_pred
+  message(Sys.time())
+  for(kt in kernels_v){
+    for(i in 0:5){
+      mod_name <- paste(mt, kt, sep="_")
+      file_name <- paste0("train_bin_rl_gen_sig_prior_gam_",
+                          mt, "_", kt,
+                          "_2026_05_25_RLV2_iter_",i,".RData")
+      
+      fp <- here::here("Results",
+                       "Fixed Data",
+                       file_name)
+      
+      if(file.exists(fp)){
+        for(j in mods){
+          k <- k + 1
+           results <- import_predict_mod_gp_sampling_fun(newX = X_pred_irl,
+                                                 Xdesign = dat_pred[,c(metals,"alloy_cnt")],
+                                                 newX_pred = BX,
+                                                 file_path = fp,
+                                                 step_id = mod_name,
+                                                 mod_id = j,
+                                                 gp_type = "Hom",
+                                                 rseed = 1323,
+                                                 n_funs = length(properties) - 1,
+                                                 n_samples = 1e4,
+                                                 prop_names = properties,
+                                                 pred_type = pred_type)
+           
+           #pareto_mean <- pareto_scores_prop_fun(as.matrix(results$mp_preds$mean))
+        
+            gc()
+           
+           #results$mp_mean$pareto_score = pareto_mean$pareto_score
+           dat_mu_hom_gen[[k]] <- results$gp_mu %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_var_hom_gen[[k]] <- results$gp_var %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_nug_hom_gen[[k]] <- results$gp_nug %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_pm_hom_gen[[k]] <- results$mp_mean %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_lb_hom_gen[[k]] <- results$mp_lb %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           dat_ub_hom_gen[[k]] <- results$mp_ub %>% mutate(iter = i,
+                                                   Kernel = kt,
+                                                   mean_type = mt)
+           impse_dat_hom_gen[[k]] <- tibble(impse = results$imspe,
+                                    iter = i,
+                                    Model = mod_name,
+                                    mean_type = mt,
+                                    Kernel = kt,
+                                    Type = j)
+        }
+      }
+      
+    }
+  }
+}
+
+
+dat_mu_hom_gen <- bind_rows(dat_mu_hom_gen)
+dat_var_hom_gen <- bind_rows(dat_var_hom_gen)
+dat_nug_hom_gen <- bind_rows(dat_nug_hom_gen)
+dat_pm_hom_gen <- bind_rows(dat_pm_hom_gen)
+dat_lb_hom_gen <- bind_rows(dat_lb_hom_gen)
+dat_ub_hom_gen <- bind_rows(dat_ub_hom_gen)
+impse_dat_hom_gen <- bind_rows(impse_dat_hom_gen)
 
 ft <- Sys.time()
 print(ft - st)

@@ -172,11 +172,11 @@ IMSPE_MV_Adjust <- function(pred_obj, accuracy = 0.01){
   
   if(b$error < accuracy) return(b$integral)
   
-  aa <- log(b$error) - log(a$error)
-  nn <- (log(accuracy) - log(a$error)) / aa + 2
+  aa <- (log(b$error) - log(a$error) ) / (log10(b$functionEvaluations) - log10(a$functionEvaluations))
+  nn <- (log(accuracy) - log(a$error)) / aa + log10(a$functionEvaluations)
   
   b <- IMSPE_MV_NI(pred_obj = pred_obj, #final estimate
-                   max_eval = 10^nn,
+                   max_eval = min(10^nn, 10^5),
                    return_object = F)
   
   return(b)

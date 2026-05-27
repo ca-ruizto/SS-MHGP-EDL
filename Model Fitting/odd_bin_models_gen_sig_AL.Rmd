@@ -119,7 +119,7 @@ joint_cov <- het_sv <-joint_ls_gp <- F
 max_train_iters <- 10
 scale_vars <- "after"
 al_steps <- 6
-exp_name <- "train_bin_rl_gen_sig_prior_gam_int_m52_2026_05_25"
+exp_name <- "train_bin_rl_gen_sig_prior_gam_int_m32_2026_05_25"
 only_int <- T
 ini_seed <- 233545
 np_seed <- 12143
@@ -134,7 +134,7 @@ cov_type = "Matern3_2" #"Gaussian", "Matern5_2", "Matern3_2"
 
 cor_fun_test <- function(theta, D_mat) general_cor_fun(theta = theta,
                                                        D_mat = D_mat,
-                                                       kernel_fun = matern_5_2_fun) #matern_5_2_fun gaus_ker_fun
+                                                       kernel_fun = matern_3_2_fun) #matern_5_2_fun gaus_ker_fun
 ```
 
 ```{r}
@@ -846,7 +846,7 @@ for(iter in 0:5){
   
   save(np_id_h,
      file = here::here("Results","Fixed Data",
-                       "ALV2_26_prior_gam_np_h_gen_sig_int_m52.RData"))
+                       "ALV2_26_prior_gam_np_h_gen_sig_int_m32.RData"))
   
 }
 
@@ -855,6 +855,11 @@ for(iter in 0:5){
 
 ```{r}
 
+pol[[1]]$Sig 
+pol[[3]]$Sig 
+
+pol[[2]]$Sig 
+pol[[4]]$Sig 
 
 ```
 
