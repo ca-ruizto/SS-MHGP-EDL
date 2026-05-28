@@ -176,7 +176,7 @@ IMSPE_MV_Adjust <- function(pred_obj, accuracy = 0.01){
   nn <- (log(accuracy) - log(a$error)) / aa + log10(a$functionEvaluations)
   
   b <- IMSPE_MV_NI(pred_obj = pred_obj, #final estimate
-                   max_eval = min(10^nn, 10^5),
+                   max_eval = min(10^nn, 5e4),
                    return_object = F)
   
   return(b)

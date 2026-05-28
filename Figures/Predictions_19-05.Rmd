@@ -653,7 +653,7 @@ dat_mu_hom_gen <- dat_lb_hom_gen <- dat_ub_hom_gen <- dat_var_hom_gen <-
 mods <- c("Tension-Hom", "Compression-Hom")
 
 k <- 0
-impse_dat_hom <- vector(mode = "list")
+impse_dat_hom_gen <- vector(mode = "list")
 
 for(mt in mean_type){
   BX <- NULL
