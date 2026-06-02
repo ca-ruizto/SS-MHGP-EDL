@@ -75,7 +75,7 @@ props <- c("ultimate_stress","ultimate_strain",
 prop_ltx <- unname(TeX(c("$\\sigma_u$","$\\epsilon_u$",
                          "$U_T$","$E$")))
 
-coefs_ltx <- unname(TeX(c("$\\ln(\\sigma_f)$",
+coefs_ltx <- unname(TeX(c("$\\ln(\\epsilon_u)$",
                                   "$\\beta_1$","$\\beta_2$","$\\beta_3$",
                                "$\\beta_4$", "$\\beta_5$", "$\\beta_6$")))
 
@@ -103,7 +103,9 @@ Initial data set
 dat_ss_c <- rio::import(here::here("Results",
                                  "ss_all_ort_coefs_c_uns.csv"))
 
-dat_ss_c <- as_tibble(dat_ss_c)
+dat_ss_c <- as_tibble(dat_ss_c)%>%
+              mutate(alloy_cnt = alloy_cnt.x)%>%
+              select(-alloy_cnt.x, - alloy_cnt.y)
 
 dat_ss_c <- dat_ss_c%>%
             filter(!(alloy %in% metals))%>%
@@ -112,7 +114,9 @@ dat_ss_c <- dat_ss_c%>%
 dat_ss_t <- rio::import(here::here("Results",
                                  "ss_all_ort_coefs_t_uns.csv"))
 
-dat_ss_t <- as_tibble(dat_ss_t)
+dat_ss_t <- as_tibble(dat_ss_t)%>%
+              mutate(alloy_cnt = alloy_cnt.x)%>%
+              select(-alloy_cnt.x, - alloy_cnt.y)
 
 dat_ss_t <- dat_ss_t%>%
             filter(!(alloy %in% metals))%>%
@@ -334,9 +338,9 @@ for(mt in mean_type){
                        fn)
     
     if(file.exists(fp)){
-      load(fp)
-      np_id_h_all <- c(np_id_h_all, 
-                       np_id_h)
+      #load(fp)
+      # np_id_h_all <- c(np_id_h_all, 
+      #                  np_id_h)
                        #np_id_h[-length(np_id_h)])
     }
     
@@ -553,186 +557,186 @@ print(ft - st)
 ```
 
 ```{r}
-st <- Sys.time()
-
-dat_mu_gen <- dat_lb_gen <- dat_ub_gen <- dat_var_gen <- 
-  dat_nug_gen <- dat_pm_gen <- vector(mode = "list",  length = 2)
-
-mods <- c("Tension", "Compression")
-
-pred_type = "median" # mean or median
-
-k <- 0
-impse_dat_gen <- vector(mode = "list")
-
-for(mt in mean_type){
-  BX <- NULL
-  if(mt == "pol") BX <- Basis_X_pred
-  message(Sys.time())
-  for(kt in kernels_v){
-    for(i in 0:5){
-      mod_name <- paste(mt, kt, sep="_")
-      file_name <- paste0("train_bin_rl_gen_sig_prior_gam_",
-                          mt, "_", kt,
-                          "_2026_05_25_RLV2_iter_",i,".RData")
-      
-      fp <- here::here("Results",
-                       "Fixed Data",
-                       file_name)
-      
-      if(file.exists(fp)){
-        for(j in mods){
-          k <- k + 1
-           results <- import_predict_mod_gp_sampling_fun(newX = X_pred_irl,
-                                                 Xdesign = dat_pred[,c(metals,"alloy_cnt")],
-                                                 newX_pred = BX,
-                                                 file_path = fp,
-                                                 step_id = mod_name,
-                                                 mod_id = j,
-                                                 rseed = 1323,
-                                                 n_funs = length(properties) - 1,
-                                                 n_samples = 1e4,
-                                                 prop_names = properties,
-                                                 pred_type = pred_type)
-           
-           #pareto_mean <- pareto_scores_prop_fun(as.matrix(results$mp_preds$mean))
-        
-            gc()
-           
-           #results$mp_mean$pareto_score = pareto_mean$pareto_score
-           dat_mu_gen[[k]] <- results$gp_mu %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_var_gen[[k]] <- results$gp_var %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_nug_gen[[k]] <- results$gp_nug %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_pm_gen[[k]] <- results$mp_mean %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_lb_gen[[k]] <- results$mp_lb %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_ub_gen[[k]] <- results$mp_ub %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           impse_dat_gen[[k]] <- tibble(impse = results$imspe,
-                                    iter = i,
-                                    Model = mod_name,
-                                    mean_type = mt,
-                                    Kernel = kt,
-                                    Type = j)
-        }
-      }
-      
-    }
-  }
-}
-
-
-dat_mu_gen <- bind_rows(dat_mu_gen)
-dat_var_gen <- bind_rows(dat_var_gen)
-dat_nug_gen <- bind_rows(dat_nug_gen)
-dat_pm_gen <- bind_rows(dat_pm_gen)
-dat_lb_gen <- bind_rows(dat_lb_gen)
-dat_ub_gen <- bind_rows(dat_ub_gen)
-impse_dat_gen <- bind_rows(impse_dat_gen)
-
-ft <- Sys.time()
-print(ft - st)
+# st <- Sys.time()
+# 
+# dat_mu_gen <- dat_lb_gen <- dat_ub_gen <- dat_var_gen <- 
+#   dat_nug_gen <- dat_pm_gen <- vector(mode = "list",  length = 2)
+# 
+# mods <- c("Tension", "Compression")
+# 
+# pred_type = "median" # mean or median
+# 
+# k <- 0
+# impse_dat_gen <- vector(mode = "list")
+# 
+# for(mt in mean_type){
+#   BX <- NULL
+#   if(mt == "pol") BX <- Basis_X_pred
+#   message(Sys.time())
+#   for(kt in kernels_v){
+#     for(i in 0:5){
+#       mod_name <- paste(mt, kt, sep="_")
+#       file_name <- paste0("train_bin_rl_gen_sig_prior_gam_",
+#                           mt, "_", kt,
+#                           "_2026_05_25_RLV2_iter_",i,".RData")
+#       
+#       fp <- here::here("Results",
+#                        "Fixed Data",
+#                        file_name)
+#       
+#       if(file.exists(fp)){
+#         for(j in mods){
+#           k <- k + 1
+#            results <- import_predict_mod_gp_sampling_fun(newX = X_pred_irl,
+#                                                  Xdesign = dat_pred[,c(metals,"alloy_cnt")],
+#                                                  newX_pred = BX,
+#                                                  file_path = fp,
+#                                                  step_id = mod_name,
+#                                                  mod_id = j,
+#                                                  rseed = 1323,
+#                                                  n_funs = length(properties) - 1,
+#                                                  n_samples = 1e4,
+#                                                  prop_names = properties,
+#                                                  pred_type = pred_type)
+#            
+#            #pareto_mean <- pareto_scores_prop_fun(as.matrix(results$mp_preds$mean))
+#         
+#             gc()
+#            
+#            #results$mp_mean$pareto_score = pareto_mean$pareto_score
+#            dat_mu_gen[[k]] <- results$gp_mu %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_var_gen[[k]] <- results$gp_var %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_nug_gen[[k]] <- results$gp_nug %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_pm_gen[[k]] <- results$mp_mean %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_lb_gen[[k]] <- results$mp_lb %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_ub_gen[[k]] <- results$mp_ub %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            impse_dat_gen[[k]] <- tibble(impse = results$imspe,
+#                                     iter = i,
+#                                     Model = mod_name,
+#                                     mean_type = mt,
+#                                     Kernel = kt,
+#                                     Type = j)
+#         }
+#       }
+#       
+#     }
+#   }
+# }
+# 
+# 
+# dat_mu_gen <- bind_rows(dat_mu_gen)
+# dat_var_gen <- bind_rows(dat_var_gen)
+# dat_nug_gen <- bind_rows(dat_nug_gen)
+# dat_pm_gen <- bind_rows(dat_pm_gen)
+# dat_lb_gen <- bind_rows(dat_lb_gen)
+# dat_ub_gen <- bind_rows(dat_ub_gen)
+# impse_dat_gen <- bind_rows(impse_dat_gen)
+# 
+# ft <- Sys.time()
+# print(ft - st)
 ```
 
 ```{r}
-st <- Sys.time()
-
-dat_mu_hom_gen <- dat_lb_hom_gen <- dat_ub_hom_gen <- dat_var_hom_gen <- 
-  dat_nug_hom_gen <- dat_pm_hom_gen <- vector(mode = "list", length = 2)
-
-mods <- c("Tension-Hom", "Compression-Hom")
-
-k <- 0
-impse_dat_hom_gen <- vector(mode = "list")
-
-for(mt in mean_type){
-  BX <- NULL
-  if(mt == "pol") BX <- Basis_X_pred
-  message(Sys.time())
-  for(kt in kernels_v){
-    for(i in 0:5){
-      mod_name <- paste(mt, kt, sep="_")
-      file_name <- paste0("train_bin_rl_gen_sig_prior_gam_",
-                          mt, "_", kt,
-                          "_2026_05_25_RLV2_iter_",i,".RData")
-      
-      fp <- here::here("Results",
-                       "Fixed Data",
-                       file_name)
-      
-      if(file.exists(fp)){
-        for(j in mods){
-          k <- k + 1
-           results <- import_predict_mod_gp_sampling_fun(newX = X_pred_irl,
-                                                 Xdesign = dat_pred[,c(metals,"alloy_cnt")],
-                                                 newX_pred = BX,
-                                                 file_path = fp,
-                                                 step_id = mod_name,
-                                                 mod_id = j,
-                                                 gp_type = "Hom",
-                                                 rseed = 1323,
-                                                 n_funs = length(properties) - 1,
-                                                 n_samples = 1e4,
-                                                 prop_names = properties,
-                                                 pred_type = pred_type)
-           
-           #pareto_mean <- pareto_scores_prop_fun(as.matrix(results$mp_preds$mean))
-        
-            gc()
-           
-           #results$mp_mean$pareto_score = pareto_mean$pareto_score
-           dat_mu_hom_gen[[k]] <- results$gp_mu %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_var_hom_gen[[k]] <- results$gp_var %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_nug_hom_gen[[k]] <- results$gp_nug %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_pm_hom_gen[[k]] <- results$mp_mean %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_lb_hom_gen[[k]] <- results$mp_lb %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           dat_ub_hom_gen[[k]] <- results$mp_ub %>% mutate(iter = i,
-                                                   Kernel = kt,
-                                                   mean_type = mt)
-           impse_dat_hom_gen[[k]] <- tibble(impse = results$imspe,
-                                    iter = i,
-                                    Model = mod_name,
-                                    mean_type = mt,
-                                    Kernel = kt,
-                                    Type = j)
-        }
-      }
-      
-    }
-  }
-}
-
-
-dat_mu_hom_gen <- bind_rows(dat_mu_hom_gen)
-dat_var_hom_gen <- bind_rows(dat_var_hom_gen)
-dat_nug_hom_gen <- bind_rows(dat_nug_hom_gen)
-dat_pm_hom_gen <- bind_rows(dat_pm_hom_gen)
-dat_lb_hom_gen <- bind_rows(dat_lb_hom_gen)
-dat_ub_hom_gen <- bind_rows(dat_ub_hom_gen)
-impse_dat_hom_gen <- bind_rows(impse_dat_hom_gen)
-
-ft <- Sys.time()
-print(ft - st)
+# st <- Sys.time()
+# 
+# dat_mu_hom_gen <- dat_lb_hom_gen <- dat_ub_hom_gen <- dat_var_hom_gen <- 
+#   dat_nug_hom_gen <- dat_pm_hom_gen <- vector(mode = "list", length = 2)
+# 
+# mods <- c("Tension-Hom", "Compression-Hom")
+# 
+# k <- 0
+# impse_dat_hom_gen <- vector(mode = "list")
+# 
+# for(mt in mean_type){
+#   BX <- NULL
+#   if(mt == "pol") BX <- Basis_X_pred
+#   message(Sys.time())
+#   for(kt in kernels_v){
+#     for(i in 0:5){
+#       mod_name <- paste(mt, kt, sep="_")
+#       file_name <- paste0("train_bin_rl_gen_sig_prior_gam_",
+#                           mt, "_", kt,
+#                           "_2026_05_25_RLV2_iter_",i,".RData")
+#       
+#       fp <- here::here("Results",
+#                        "Fixed Data",
+#                        file_name)
+#       
+#       if(file.exists(fp)){
+#         for(j in mods){
+#           k <- k + 1
+#            results <- import_predict_mod_gp_sampling_fun(newX = X_pred_irl,
+#                                                  Xdesign = dat_pred[,c(metals,"alloy_cnt")],
+#                                                  newX_pred = BX,
+#                                                  file_path = fp,
+#                                                  step_id = mod_name,
+#                                                  mod_id = j,
+#                                                  gp_type = "Hom",
+#                                                  rseed = 1323,
+#                                                  n_funs = length(properties) - 1,
+#                                                  n_samples = 1e4,
+#                                                  prop_names = properties,
+#                                                  pred_type = pred_type)
+#            
+#            #pareto_mean <- pareto_scores_prop_fun(as.matrix(results$mp_preds$mean))
+#         
+#             gc()
+#            
+#            #results$mp_mean$pareto_score = pareto_mean$pareto_score
+#            dat_mu_hom_gen[[k]] <- results$gp_mu %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_var_hom_gen[[k]] <- results$gp_var %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_nug_hom_gen[[k]] <- results$gp_nug %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_pm_hom_gen[[k]] <- results$mp_mean %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_lb_hom_gen[[k]] <- results$mp_lb %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            dat_ub_hom_gen[[k]] <- results$mp_ub %>% mutate(iter = i,
+#                                                    Kernel = kt,
+#                                                    mean_type = mt)
+#            impse_dat_hom_gen[[k]] <- tibble(impse = results$imspe,
+#                                     iter = i,
+#                                     Model = mod_name,
+#                                     mean_type = mt,
+#                                     Kernel = kt,
+#                                     Type = j)
+#         }
+#       }
+#       
+#     }
+#   }
+# }
+# 
+# 
+# dat_mu_hom_gen <- bind_rows(dat_mu_hom_gen)
+# dat_var_hom_gen <- bind_rows(dat_var_hom_gen)
+# dat_nug_hom_gen <- bind_rows(dat_nug_hom_gen)
+# dat_pm_hom_gen <- bind_rows(dat_pm_hom_gen)
+# dat_lb_hom_gen <- bind_rows(dat_lb_hom_gen)
+# dat_ub_hom_gen <- bind_rows(dat_ub_hom_gen)
+# impse_dat_hom_gen <- bind_rows(impse_dat_hom_gen)
+# 
+# ft <- Sys.time()
+# print(ft - st)
 ```
 
 ### Comparison MAPE
@@ -926,8 +930,9 @@ impse_dat%>%
   #                    labels = prop_ltx,
   #                    palette = "Dark2")+
   scale_color_brewer("Error", palette = "Dark2")+
-  facet_grid(Test_Type~mean_type,
-             scales = "free")+
+  ggh4x::facet_grid2(Test_Type~mean_type,
+             scales = "free",
+             independent = "y")+
   labs(y = "IMSPE",
        x = "Iteration",
        linetype = "Kernel",
@@ -968,9 +973,10 @@ p1 <- impse_dat%>%
   # scale_color_brewer("Property",
   #                    labels = prop_ltx,
   #                    palette = "Dark2")+
-  scale_color_brewer("Error", palette = "Dark2")+
-  facet_grid(Model_Type~mean_type,
-             scales = "free")+
+  scale_color_brewer("Kernel", palette = "Dark2")+
+  ggh4x::facet_grid2(Model_Type~mean_type,
+             scales = "free",
+             independent = "y")+
   labs(y = "Log(IMSPE)",
        x = "Iteration",
        title="IMSPE During the AL Algorithm")+
@@ -991,17 +997,14 @@ p1
 
 
 ```{r}
-nn_bin_t <- read.csv(here::here("Python_code", "Data", "nn_6",
-                                "dat_test_bin_even_t_predictions_6.csv"))
-
-nn_bin_c <- read.csv(here::here("Python_code", "Data", "nn_6",
-                                "dat_test_bin_even_c_predictions_6.csv"))
-
-nn_qq_t <- read.csv(here::here("Python_code", "Data", "nn_6",
-                                "dat_test_qq_t_predictions_6.csv"))
-
-nn_qq_c <- read.csv(here::here("Python_code", "Data", "nn_6",
-                                "dat_test_qq_c_predictions_6.csv"))
+nn_bin_t <- read.csv(here::here("Results", "NN_Experts",
+                                 "dat_test_bin_even_t_predictions.csv"))
+nn_bin_c <- read.csv(here::here("Results", "NN_Experts",
+                                 "dat_test_bin_even_c_predictions.csv"))
+nn_qq_t <- read.csv(here::here("Results", "NN_Experts",
+                                 "dat_test_qq_t_predictions.csv"))
+nn_qq_c <- read.csv(here::here("Results", "NN_Experts",
+                                 "dat_test_qq_c_predictions.csv"))
 
 mu_ids <- 7 + 1:7
 var_ids <- max(mu_ids) + 1:7
@@ -1291,7 +1294,7 @@ dat_pm2%>%
   geom_ribbon(aes(ymin = lb,
                   ymax = ub,
                   fill = Step),
-              alpha =0.25)+
+              alpha =0.5)+
   scale_fill_brewer("Iteration", palette = "Dark2")+
   geom_point(size = 1.5,
              data = dat_sb2%>%
@@ -1306,6 +1309,32 @@ dat_pm2%>%
   facet_wrap(~property,labeller = label_parsed,
              scales = "free", nrow = 1)+
   theme(legend.position = "bottom")
+```
+
+```{r pred_prop_monb_small, fig.width=5, fig.height=3}
+
+dat_pm2%>%
+  filter(property %in% c("epsilon[u]", "U[T]"),
+         Step == 0)%>%
+  ggplot(aes(x= Nb,
+             y = val))+
+  geom_line(aes(color = Step),
+            linewidth = 1.25)+
+  scale_color_brewer("Iteration", palette = "Dark2")+
+  geom_ribbon(aes(ymin = lb,
+                  ymax = ub,
+                  fill = Step),
+              alpha =0.5)+
+  scale_fill_brewer("Iteration", palette = "Dark2")+
+  geom_point(size = 1.5,
+             data = dat_sb2%>%
+                    filter(property %in% c("epsilon[u]", "U[T]")),
+             color = "blue")+
+  labs(y = "Value",
+       title = "e) Properties Prediction of MoNb Alloys")+
+  facet_wrap(~property,labeller = label_parsed,
+             scales = "free", nrow = 1)+
+  theme(legend.position = "none")
 ```
 
 
@@ -1470,6 +1499,32 @@ dat_pm2%>%
   theme(legend.position = "bottom")
 ```
 
+
+```{r pred_prop_vw_small, fig.width=5, fig.height=3}
+
+dat_pm2%>%
+  filter(property %in% c("epsilon[u]", "U[T]"),
+         Step == 0)%>%
+  ggplot(aes(x= V,
+             y = val))+
+  geom_line(linewidth = 1.25,
+            colour = "blue")+
+  geom_ribbon(aes(ymin = lb,
+                  ymax = ub),
+              fill = "steelblue",
+              alpha =0.5)+
+  geom_point(size = 1.5,
+             data = dat_sb2%>%
+                    filter(property %in% c("epsilon[u]", "U[T]")),
+             color = "red")+
+  labs(y = "Value",
+       title = "e) Properties Prediction of VW Alloys")+
+  facet_wrap(~property,labeller = label_parsed,
+             scales = "free", nrow = 1)+
+  theme(legend.position = "none")
+```
+
+
 ### Beta
 
 ```{r}
@@ -1520,7 +1575,7 @@ dat_sb_3_t <- dat_ss_all%>%
 
 ```{r}
 
-dat_mu <-vector(mode = "list", length = 2)
+dat_mu <- dat_mu_c <- vector(mode = "list", length = 2)
 for(i in steps_in){
   fn <- paste0("train_bin_rl_prior_gam_pol_m52_2026_05_19_RLV2_iter_",i-1,".RData")
   fp <- here::here("Results","Fixed Data",fn)
@@ -1537,12 +1592,38 @@ for(i in steps_in){
                                            prop_names = properties)
   
  dat_mu[[i]] <- results$gp_mu
+ 
+ results <- import_predict_mod_gp_sampling_fun(newX = X_pred_irl,
+                                                 Xdesign = X_design,
+                                                 newX_pred = BX,
+                                           file_path = fp,
+                                           n_funs = length(properties) - 1,
+                                           step_id = i-1,
+                                           mod_id = 2,
+                                           rseed = 1323,
+                                           n_samples = 1e4,
+                                           prop_names = properties)
+  
+ dat_mu_c[[i]] <- results$gp_mu
 }
 
 
 dat_mu <- bind_rows(dat_mu)
 
 pred_ms_t <- dat_mu%>%
+            pivot_longer(all_of(properties),
+                         values_to = "pm",
+                         names_to = "property")%>%
+              mutate(var_ms = var_ms_long$var)%>%
+  inner_join(X_vw%>%
+               select(V,W,id),
+             by = c("id"),
+             relationship = "many-to-one")%>%
+        mutate(property = factor(property,
+                                 levels = properties,
+                                 labels = coefs_ltx))
+
+pred_ms_c <- bind_rows(dat_mu_c)%>%
             pivot_longer(all_of(properties),
                          values_to = "pm",
                          names_to = "property")%>%
@@ -1627,6 +1708,39 @@ pt <- pred_ms_t%>%
                   legend.text = element_text(size=10))
 
 gridExtra::grid.arrange(pc,pt,ncol = 1)
+
+```
+
+```{r pred_beta_small, fig.width=5, fig.height=3}
+qz <- qnorm(0.05/2)
+props_in <- c("ln(epsilon[u])", "beta[1]")
+pc <- pred_ms_c%>%
+  filter(Step == 0,
+         property %in% props_in)%>%
+  mutate(lb = pm - qz*sqrt(var_ms),
+        ub = pm + qz*sqrt(var_ms))%>%
+  ggplot(aes(x= V,
+             y = pm))+
+  geom_line(colour = "blue",
+            linewidth = 1.25)+
+  geom_ribbon(aes(ymin = lb,
+                  ymax = ub),
+              fill = "steelblue",
+              alpha =0.25)+
+   geom_point(size = 1.5,
+             data = dat_sb_3_c%>%
+                    filter(property %in% props_in),
+             color = "red")+
+  facet_wrap(~property , scales = "free",
+             nrow = 1,
+             labeller = label_parsed)+
+  labs(y = "Value",
+       title = "d) Basis Coefficients")+
+  theme(legend.position = "right",
+        text=element_text(size = 12),
+                  legend.box.margin = margin(-10,-10,-10,-10),
+                  legend.text = element_text(size=10))
+pc
 
 ```
 
@@ -1728,8 +1842,8 @@ dat_ss_ci%>%
             color = "black")+
   facet_wrap(~V,
              scales = "free")+
-  labs(y = "Stress",
-       x = "Strain",
+  labs(y = TeX("Stress $\\sigma$ (GPa)"),
+       x = TeX("Strain $\\epsilon$"),
        title = "Predicted SS Curve for VW Binary Alloys under Tension")+
   theme_bw()
 ```
