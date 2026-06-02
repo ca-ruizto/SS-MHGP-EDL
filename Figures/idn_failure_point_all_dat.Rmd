@@ -396,7 +396,7 @@ dat_ids_plot <- c(dat_ids_plot$alloy_cnt, 30)
 ```
 
 
-```{r raw_combined, fig.width=6, fig.height=3.5, dpi = 400}
+```{r raw_combined, fig.width=5, fig.height=3}
 ss_dat_c%>%
   filter(alloy_cnt %in% dat_ids_plot,
          strain < 0.11)%>%
@@ -420,7 +420,7 @@ ss_dat_c%>%
   facet_grid(test_type~alloy_id, scales = "free")+
   labs(x= TeX("Strain $\\epsilon$"),
        y = TeX("Stress $\\sigma$ (GPa)"),
-       title = "Simulated Stress Strain Curves")+
+       title = "a) AS Stress-Strain Curves")+
   theme(legend.position = "bottom",
         axis.text = element_text(size = 7),
         strip.text.x = element_text(size= 6))
@@ -450,7 +450,7 @@ dat_pred%>%
   facet_grid(test_type~alloy_id, scales = "free")+
   labs(x= TeX("Scaled Strain ($\\epsilon^{*}$)"),
        y = TeX("Stress $\\sigma$ (GPa)"),
-       title = "Stress-Strain Curves and Functional Fit")+
+       title = "b) Stress-Strain Curves and Functional Fit")+
   theme(legend.position = "bottom",
         axis.text = element_text(size = 7),
         strip.text.x = element_text(size= 6))
@@ -484,7 +484,7 @@ dat_pred%>%
                      independent = "y")+
   labs(x= TeX("Scaled Strain ($\\epsilon^{*}$)"),
        y = TeX("Stress $\\sigma$ (GPa)"),
-       title = "Functional Prediction at End-of-Test")+
+       title = "c) Functional Prediction at End-of-Test")+
   theme(legend.position = "bottom",
         axis.text = element_text(size = 7),
         strip.text.x = element_text(size= 6))
