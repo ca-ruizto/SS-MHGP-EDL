@@ -186,10 +186,11 @@ fit_leg_basis_mod_fun <- function(ss_dat,
                                       "young_mod",
                                       "frac_stress",
                                       "gcv"),
-                       alloy_rep_id = alr_id[i])
+                       alloy_rep_id = alr_id[i],
+                       alloy_cnt = temp_dat$alloy_cnt[1])
     
     out_pred[[i]] <- temp_dat%>%
-                      mutate(pred_stress = pred_stress)
+                      mutate(pred_stress = as.vector(pred_stress))
   }
   
   if(return_pred) return(list(coefs = bind_rows(out),

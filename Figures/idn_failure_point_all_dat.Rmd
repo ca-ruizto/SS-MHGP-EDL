@@ -2,7 +2,9 @@
 title: "idn_failure_point"
 author: " "
 date: " "
-output: html_document
+output: 
+  html_document: 
+    keep_md: true
 ---
 
 ```{r setup, include=FALSE}
@@ -12,6 +14,13 @@ library(tidyverse)
 library(rio)
 library(mgcv)
 library(latex2exp)
+
+theme_set(theme_bw()+
+            theme(text=element_text(size = 12),
+                  legend.box.margin = margin(-10,-10,-10,-10),
+                  legend.position = "right",
+                  strip.text = element_text(size= 9),
+                  legend.text = element_text(size=10)))
 ```
 
 
@@ -46,20 +55,6 @@ ss_dat_d <- ss_dat_d%>%
 
 
 
-```{r fig.width=6, fig.height=2.5}
-ss_dat_d%>%
-  filter(Experiment == 1)%>%
-  mutate(rep =factor(rep))%>%
-  filter(strain < 0.12)%>%
-  ggplot(aes(x = strain,
-             y =stress,
-             group = rep,
-             color = rep))+
-  geom_line()+
-  facet_wrap(~test_type)+
-  theme_bw()
-```
-
 
 ```{r}
 ss_dat_t <- ss_dat_d %>%
@@ -89,44 +84,6 @@ failure_points_c <- ss_dat_c%>%
                       inner_join(max_stress_c, 
                                  by = c("alloy_id","stress", "rep"))
 ```
-
-
-```{r}
-temp_dat <- ss_dat_t %>%
-  filter(Experiment == 1,
-         rep == 1,
-         strain < 0.05)
-```
-
-
-<!-- ```{r} -->
-<!-- library(kernlab) -->
-<!-- ``` -->
-
-<!-- ```{r} -->
-<!-- tr <- ksmooth(x = temp_dat$strain, -->
-<!--            y  = temp_dat$stress, -->
-<!--            kernel = "box", -->
-<!--            bandwidth = 0.001) -->
-<!-- ``` -->
-
-
-<!-- ```{r} -->
-<!-- ms <- which.max(temp_dat$stress) -->
-<!-- ``` -->
-
-
-<!-- ```{r} -->
-<!-- temp_dat%>% -->
-<!--   mutate(yp = tr$y)%>% -->
-<!--   ggplot(aes(x=strain))+ -->
-<!--   geom_point(aes(y = stress))+ -->
-<!--   geom_line(aes(y = yp))+ -->
-<!--   geom_vline(xintercept = temp_dat$strain[ms], -->
-<!--              color = "red")+ -->
-<!--   theme_bw() -->
-<!-- ``` -->
-
 
 
 
@@ -162,7 +119,7 @@ ss_dat_c = ss_dat_c%>%
 
 ###Filtering based on critical strain, scaling the strain axis 0-1 and plotting to check,
 
-```{r fig.width=6, fig.height=3.5}
+```{r ss_coverage, fig.width=11, fig.height=3.5}
 ss_dat_t_filtered = ss_dat_t %>%
                     filter(strain < max_strain | is.na(max_strain))%>%
                     group_by(alloy_id, rep)%>%
@@ -174,28 +131,9 @@ ss_dat_t_filtered = ss_dat_t %>%
                            alloy_id = factor(alloy_id),
                            rep_f = factor(rep),
                            alloy_rep_id = factor(alloy_rep_id))%>%
-                    ungroup()
+                    ungroup()%>%
+  mutate(elements = (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))
 
-ss_dat_t_filtered %>%
-  unite("plot_id", 
-        c("alloy_id", "rep"),
-        remove = F)%>%
-  mutate(elements = (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0),
-         elements = factor(elements))%>%
-  ggplot(aes(x = strain,
-             y = stress,
-             group = plot_id,
-             color = elements))+
-  geom_line(alpha = 0.5)+
-  scale_color_brewer(palette = "Set1")+
-  theme_bw()+
-  theme(legend.position = "right")
-
-```
-
-
-
-```{r}
 
 ss_dat_c_filtered = ss_dat_c %>%
                     filter(strain < max_strain | is.na(max_strain))%>%
@@ -208,17 +146,50 @@ ss_dat_c_filtered = ss_dat_c %>%
                            alloy_id = factor(alloy_id),
                            rep_f = factor(rep),
                            alloy_rep_id = factor(alloy_rep_id))%>%
-                    ungroup()
+                    ungroup()%>%
+  mutate(elements = (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))
 
-ss_dat_c_filtered %>%
+p1 <- ss_dat_t_filtered %>%
+  unite("plot_id", 
+        c("alloy_id", "rep"),
+        remove = F)%>%
+  filter(elements > 1)%>%
+  mutate(elements = factor(elements))%>%
   ggplot(aes(x = scaled_strain,
-             y = scaled_stress,
-             group = alloy_rep_id,
-             color = alloy_id))+
-  geom_line(alpha = 0.45)+
-  theme_bw()+
-  theme(legend.position = "none")
+             y = stress,
+             group = plot_id,
+             color = elements))+
+  geom_line(alpha = 0.5)+
+  scale_color_brewer("Elements",palette = "Dark2")+
+  theme(legend.position = "right")+
+  labs(y = TeX("Stress $\\sigma$ (GPa)"),
+       x = TeX("Scaled Strain $\\tilde{\\epsilon}$"),
+       title = "SS for Tension")
+
+
+p2 <- ss_dat_c_filtered %>%
+  unite("plot_id", 
+        c("alloy_id", "rep"),
+        remove = F)%>%
+  filter(elements > 1)%>%
+  mutate(elements = factor(elements))%>%
+  ggplot(aes(x = scaled_strain,
+             y = stress,
+             group = plot_id,
+             color = elements))+
+  geom_line(alpha = 0.5)+
+  scale_color_brewer("Elements",palette = "Dark2")+
+  theme(legend.position = "right")+
+  labs(y = TeX("Stress $\\sigma$ (GPa)"),
+       x = TeX("Scaled Strain $\\tilde{\\epsilon}$"),
+       title = "SS for Compression")
+
+gridExtra::grid.arrange(p1, p2, nrow = 1)
 ```
+
+
+
+
 
 ```{r}
 save(ss_dat_c_filtered,
@@ -240,63 +211,11 @@ temp_dat <- ss_dat_t_filtered%>%
 ```
 
 ```{r}
-source(here::here("utilities.R"))
+source(here::here("Functions",
+                  "utilities.R"))
 ```
 
 
-
-```{r}
-mat <- fdapace::CreateBasis(4,
-                            pts = temp_dat$scaled_strain,
-                            type = "legendre01")
-
-matplot(y=mat, x = temp_dat$scaled_strain,
-        type = "l")
-
-```
-
-```{r}
-mat <- create_leg_basis_fun(n_funs = 5,
-                            pts = temp_dat$scaled_strain,
-                            intercept = T)
-
-matplot(y=mat, x = temp_dat$scaled_strain,
-        type = "l")
-```
-
-
-```{r}
-crossprod(mat)
-```
-
-
-
-```{r}
-colnames(mat) <- paste("bf", 1:5, sep = "_")
-
-reg_dat <- as_tibble(mat)%>%
-            mutate(stress = temp_dat$stress)
-```
-
-
-```{r}
-reg_mod <- lm(stress ~ -1 + .,
-              data = reg_dat)
-```
-
-```{r}
-temp_dat%>%
-  mutate(pred = reg_mod$fitted.values)%>%
-  ggplot(aes(x = scaled_strain))+
-  geom_line(aes(y = stress),
-             alpha = 0.5)+
-  geom_line(aes(y = pred))+
-  theme_bw()
-```
-
-```{r}
-coef(reg_mod)
-```
 
 ### Othonormal basis fitting
 
@@ -341,101 +260,237 @@ for(j in 1:3){
 dat_gcv <- bind_rows(dat_gcv)
 ```
 
+```{r}
+temp <- ss_dat_c_filtered%>%
+  filter(rep == 1)%>%
+  ungroup()%>%
+  filter(elements == 2,
+         round(pmax(Mo,Nb,Ta,V,W),1) %in% c(0.1,0.3,0.5,0.7,0.9) 
+         )%>%
+  arrange(alloy_cnt)
+
+#temp <- temp[-which(temp$alloy_cnt == 59),] #59 is the quanary with x =0.2 for all elements
+
+
+id_train <- temp$alloy_cnt |> unique()
+```
+
 
 ```{r fig.width=6, fig.height=3.4}
 dat_gcv_avg <- dat_gcv%>%
+                filter(alloy_cnt %in% id_train)%>%
+                ungroup()%>%
                 group_by(nb, lam, Test)%>%
-                mutate(val = mean(val))
+                summarise(val = mean(val))
 dat_gcv%>%
+  filter(lam < 1)%>%
   mutate(nb = factor(nb),
-         lam = factor(lam))%>%
+         lam = factor(lam),
+         Test = factor(Test, 
+                       levels = c("Com","Ten"),
+                       labels = c("Compression",
+                                  "Tension")))%>%
   ggplot(aes(x = nb,
              y = val,
              colour = lam))+
   geom_boxplot()+
-  facet_wrap(~Test)
+  facet_wrap(~Test)+
+  theme_bw()+
+  labs(y = "RMSE",
+       x = "Number of Basis")
+```
 
+```{r rmse_basis, fig.width=5, fig.height=2.5}
 dat_gcv_avg%>%
-  mutate(lam = factor(lam))%>%
+  filter(lam < 1)%>%
+  mutate(Test = factor(Test, 
+                       levels = c("Com","Ten"),
+                       labels = c("Compression",
+                                  "Tension")))%>%
   ggplot(aes(x = nb,
-             y = val,
-             colour = lam))+
+             y = val))+
   geom_line()+
   facet_wrap(~Test, scales = "free")+
-  theme(legend.position = "right")
+  theme(legend.position = "right")+
+  labs(y = "Average RMSE",
+       x = "Number of Basis")
 ```
+
+```{r rmse_basis_perc, fig.width=5, fig.height=2.5}
+dat_gcv_avg%>%
+  filter(lam < 1)%>%
+  mutate(Test = factor(Test, 
+                       levels = c("Com","Ten"),
+                       labels = c("Compression",
+                                  "Tension")))%>%
+  group_by(Test)%>%
+  arrange(nb)%>%
+  mutate(val = (val - lag(val)) / lag(val) * 100 )%>%
+  filter(nb > 4)%>%
+  ggplot(aes(x = nb,
+             y = val))+
+  geom_line(linewidth = 1.5,
+            colour = "blue")+
+  facet_wrap(~Test, scales = "free")+
+  theme(legend.position = "right")+
+  geom_hline(yintercept = -0.25, 
+             colour = "red",
+             linetype = "dashed")+
+  labs(y = "Change (%)",
+       x = "Number of Basis")
+```
+
+
 
 
 
 ```{r}
 dat_orth_coefs_t <- fit_leg_basis_mod_fun(ss_dat = ss_dat_t_filtered%>%
                                             mutate(scaled_stress = stress),
-                                          n_funs = 4,
+                                          n_funs = 6,
                                           intercept = T)
 dat_orth_coefs_c <- fit_leg_basis_mod_fun(ss_dat = ss_dat_c_filtered%>%
                                               mutate(scaled_stress = stress),
-                                            n_funs = 5,
+                                            n_funs = 6,
                                             intercept = T)
   
 dat_orth_coefs_pred_t <- fit_leg_basis_mod_fun(ss_dat = ss_dat_t_filtered%>%
                                             mutate(scaled_stress = stress),
-                                          n_funs = 4,
+                                          n_funs = 6,
                                           intercept = T,
                                           return_pred = T)
 
 dat_orth_coefs_pred_c <- fit_leg_basis_mod_fun(ss_dat = ss_dat_c_filtered%>%
                                             mutate(scaled_stress = stress),
-                                          n_funs = 5,
+                                          n_funs = 6,
                                           intercept = T,
                                           return_pred = T)
 ```
+
+
+
+
 
 ```{r}
 dat_pred <- bind_rows(dat_orth_coefs_pred_c$preds,
                       dat_orth_coefs_pred_t$preds)
 ```
 
-```{r fig.height=4, fig.width=9}
-metals <- c("Mo", "Nb", "Ta", "V","W", "Mo_Nb_Ta_V_W")
-ss_dat_all%>%
-  filter(alloy %in% metals,
-         strain < 0.2)%>%
-  mutate(alloy = factor(alloy,
-                        levels = metals))%>%
-  ggplot(aes(x=strain,
-             y=stress,
-             colour = alloy))+
-  geom_line(linewidth = 1)+
-  scale_color_brewer(palette =  "Paired")+
-  facet_wrap(~test_type,
-             scales = "free")+
-  theme_bw()
+```{r}
+dat_ids <- ss_dat_c_filtered%>%
+            group_by(alloy_cnt)%>%
+            slice_head(n= 1)
+
+ids_labels <- c("Mo20_Nb80",
+                "V50_W50",
+                "Mo50_Nb25_Ta19_V00_W06")
+
+dat_ids_plot <- dat_ids%>%
+                  filter(Mo == 0.2, Nb == 0.8)%>%
+  bind_rows(dat_ids%>%
+                  filter(V == 0.5, W == 0.5),
+                  dat_ids%>%
+                  filter(Mo == 0.5, Nb == 0.25))
+
+dat_ids_plot <- c(dat_ids_plot$alloy_cnt, 30)
 ```
 
-```{r fig.height=4, fig.width=9}
-metals <- c("Mo", "Nb", "Ta", "V","W", "Mo_Nb_Ta_V_W")
-ss_dat_all%>%
-  filter(alloy %in% metals,
-         strain < 0.2)%>%
-  mutate(alloy = factor(alloy,
-                        levels = metals))%>%
-  ggplot(aes(x=strain,
-             y=stress,
-             colour = alloy))+
-  geom_ribbon(aes(ymax=pred_stress,
-                  fill = alloy),
-              ymin = 0, alpha = 0.5,
-            data = dat_pred%>%
-              filter(alloy %in% metals)%>%
-  mutate(alloy = factor(alloy,
-                        levels = metals)))+
-  geom_line(linewidth = 1)+
-  scale_color_brewer(palette =  "Paired")+
-   scale_fill_brewer(palette =  "Paired")+
-  facet_grid(test_type~alloy,
-             scales = "free")+
-  theme_bw()
+
+```{r raw_combined, fig.width=6, fig.height=3.5, dpi = 400}
+ss_dat_c%>%
+  filter(alloy_cnt %in% dat_ids_plot,
+         strain < 0.11)%>%
+  bind_rows(
+  ss_dat_t%>%
+  filter(alloy_cnt %in% dat_ids_plot,
+         strain < 0.11))%>%
+  unite("alloy_rep_id", 
+        c("alloy_id", "rep"),
+        remove = F)%>%
+  mutate(Rep = factor(rep),
+         alloy_id = factor(alloy_cnt,
+                           levels = dat_ids_plot,
+                           labels = ids_labels))%>%
+  ggplot(aes(x= strain,
+             y = stress,
+             linetype = Rep,
+             group = alloy_rep_id,
+             color = Rep))+
+  geom_line()+
+  facet_grid(test_type~alloy_id, scales = "free")+
+  labs(x= TeX("Strain $\\epsilon$"),
+       y = TeX("Stress $\\sigma$ (GPa)"),
+       title = "Simulated Stress Strain Curves")+
+  theme(legend.position = "bottom",
+        axis.text = element_text(size = 7),
+        strip.text.x = element_text(size= 6))
 ```
+
+
+```{r trans_combined, fig.width=5, fig.height=3}
+dat_pred%>%
+  filter(alloy_cnt %in% dat_ids_plot)%>%
+  unite("alloy_rep_id", 
+        c("alloy_id", "rep"),
+        remove = F)%>%
+  filter(rep < 4)%>%
+  mutate(Rep = factor(rep),
+         alloy_id = factor(alloy_cnt,
+                           levels = dat_ids_plot,
+                           labels = ids_labels))%>%
+  ggplot(aes(x= scaled_strain,
+             group = alloy_rep_id))+
+  geom_line(aes(y = stress),
+            colour= "red",
+            linewidth = 0.5)+
+  geom_line(aes(y = pred_stress),
+            colour = "blue",
+            linewidth = 0.5,
+            alpha = 0.75)+
+  facet_grid(test_type~alloy_id, scales = "free")+
+  labs(x= TeX("Scaled Strain ($\\epsilon^{*}$)"),
+       y = TeX("Stress $\\sigma$ (GPa)"),
+       title = "Stress-Strain Curves and Functional Fit")+
+  theme(legend.position = "bottom",
+        axis.text = element_text(size = 7),
+        strip.text.x = element_text(size= 6))
+```
+
+```{r trans_combined_half, fig.width=5, fig.height=3}
+dat_pred%>%
+  filter(alloy_cnt %in% dat_ids_plot)%>%
+  unite("alloy_rep_id", 
+        c("alloy_id", "rep"),
+        remove = F)%>%
+  filter(rep < 4,
+         scaled_strain > 0.75)%>%
+  mutate(Rep = factor(rep),
+         alloy_id = factor(alloy_cnt,
+                           levels = dat_ids_plot,
+                           labels = ids_labels))%>%
+  ggplot(aes(x= scaled_strain,
+             group = alloy_rep_id))+
+    geom_line(aes(y = stress),
+            colour= "red",
+            linewidth = 0.5,
+            alpha = 0.5)+
+  geom_line(aes(y = pred_stress),
+            colour = "blue",
+            linewidth = 0.5,
+            alpha = 0.85)+
+  #facet_wrap(test_type~alloy_id, scales = "free")+
+  ggh4x::facet_grid2(test_type~alloy_id, 
+                     scales = "free",
+                     independent = "y")+
+  labs(x= TeX("Scaled Strain ($\\epsilon^{*}$)"),
+       y = TeX("Stress $\\sigma$ (GPa)"),
+       title = "Functional Prediction at End-of-Test")+
+  theme(legend.position = "bottom",
+        axis.text = element_text(size = 7),
+        strip.text.x = element_text(size= 6))
+```
+
+
 
 ```{r}
 dat_alloy <- ss_dat_c_filtered%>%
@@ -448,19 +503,6 @@ dat_alloy <- ss_dat_c_filtered%>%
 
 
 
-```{r  fig.width=8, fig.height=4}
-dat_orth_coefs_t%>%
-  left_join(dat_alloy,
-                        by = "alloy_rep_id")%>%
-  filter(alloy %in% c("NbV","V","Nb"))%>%
-  mutate(rep = factor(rep))%>%
-  ggplot(aes(x=Nb,
-             y = val))+
-  geom_point(aes(color= rep))+
-  facet_wrap(~coef_names,
-             scales = "free")+
-  theme_bw()
-```
 
 ```{r}
 
@@ -487,292 +529,5 @@ export(out_dat_c,
        file =here::here("Results",
                         "ss_all_ort_coefs_c_uns.csv"))
 ```
-
-```{r}
-all.equal(out_dat_t$log_max_stress,
-          out_dat_c$log_max_stress)
-```
-
-```{r}
-pnt <- out_dat_t%>%
-  filter(Experiment==19)
-
-pnt <- as.matrix(pnt[1,12:16])
-X <- as.matrix(out_dat_t[,12:16])
-dd <- rdist::cdist(pnt,X, metric = "manhattan")
-```
-
-
-```{r}
-out_dat_t%>%
-  mutate(Experiment = ifelse(Experiment < 15,0, Experiment),
-         Experiment = factor(Experiment),
-         dd = as.vector(dd))%>%
-  #filter(Experiment!=19)%>%
-  ggplot(aes(x= dd,
-             y = log_max_strain,
-             color = Experiment))+
-  geom_point()+
-  scale_color_brewer(palette = "Paired")+
-  theme_bw()
-  
-```
-
-
-
-### GAM
-
-```{r}
-model_t  = bam(stress ~ 0 + 
-                 scaled_strain:alloy_rep_id + 
-                 s(scaled_strain,
-                           by = alloy_rep_id,
-                           bs = "cr",
-                           k = 4,
-                   sp = 0), 
-               data = ss_dat_t_filtered,
-               method = 'REML' )
-
-```
-
-
-
-```{r}
-alloy_rep_id_v <- unique(ss_dat_t_filtered$alloy_rep_id)
-```
-
-
-```{r}
-ss_dat_t_filtered %>%
-  mutate(pred= model_t$fitted.values)%>%
-  filter(alloy_rep_id %in% alloy_rep_id_v[c(1,12,17,19,20)])%>%
-  ggplot(aes(x = scaled_strain,
-             group = alloy_rep_id,
-             color = alloy))+
-  geom_point(aes(y = stress),
-             alpha = 0.2,
-             shape =16)+
-  geom_line(aes(y = pred),
-            linewidth =1)+
-  theme_bw()+
-  theme(legend.position = "bottom")
-
-```
-
-```{r}
-ss_dat_c %>%
-  filter(alloy %in% c("NbV","Nb_V","V","Nb"),
-         strain < 0.15)%>%
-  unite("alloy_rep_id", 
-        c("alloy_id", "rep"),
-        remove = F)%>%
-  mutate(Nb = factor(Nb))%>%
-  ggplot(aes(x = strain,
-             group = alloy_rep_id,
-             color = Nb))+
-  geom_line(aes(y = stress),
-            linewidth =1)+
-  scale_color_brewer(palette = "Dark2")+
-  theme_bw()+
-  labs(title = "NbV Compression")+
-  theme(legend.position = "left")
-
-```
-
-
-```{r}
-basis_coefs_t <- coef(model_t)
-#basis_coefs
-
-dat_coefs_t <- tibble(names = names(basis_coefs_t),
-                    values= unname(basis_coefs_t))
-
-head(dat_coefs_t)
-```
-
-
-
-```{r}
-model_c  = bam(stress ~ 0 + scaled_strain:alloy_rep_id + 
-                 s(scaled_strain,
-                           by = alloy_rep_id,
-                           bs = "cr",
-                           k = 4), 
-               data = ss_dat_c_filtered,
-               method = 'REML' )
-
-
-```
-
-
-
-
-
-
-
-
-
-```{r}
-ss_dat_c_filtered%>%
-  filter(alloy == "NbV")%>%
-  ggplot(aes(x = scaled_strain,
-             group = rep_f,
-             color = rep_f))+
-  geom_line(aes(y = stress))+
-  theme_bw()+
-  facet_wrap(~Nb)+
-  labs(title = "NbV")+
-  theme(legend.position = "bottom")
-```
-
-
-
-```{r}
-
-ss_dat_c_filtered %>%
-  mutate(pred= model_c$fitted.values)%>%
-  ggplot(aes(x = scaled_strain,
-             group = alloy_rep_id,
-             color = alloy_id))+
-  geom_point(aes(y = stress),
-             alpha = 0.1,
-             shape =16)+
-  geom_line(aes(y = pred),
-            linewidth =1)+
-  theme_bw()+
-  theme(legend.position = "none")
-
-```
-
-
-
-
-###Extracting coefficients from the model,
-```{r}
-
-
-
-basis_coefs_c <- coef(model_c)
-#basis_coefs
-
-dat_coefs_c <- tibble(names = names(basis_coefs_c),
-                    values= unname(basis_coefs_c))
-
-head(dat_coefs_c)
-```
-
-
-
-
-###export in csv(need to do it using console, to avoid repeatation every time),
-
-write.csv(dat_coefs_t, file= "dat_coefs_t_not_ordered.csv")
-write.csv(dat_coefs_c, file= "dat_coefs_c_not_ordered.csv")
-
-
-### Extract basis and export
-
-```{r}
-source(here::here("utilities.R"))
-```
-
-
-```{r}
-df_coefs_t <- mod_all_coefs_to_df_fun(mod = model_t,
-                                  ss_dat_sort = ss_dat_t_filtered)
-
-df_coefs_c <- mod_all_coefs_to_df_fun(mod = model_c,
-                                  ss_dat_sort = ss_dat_c_filtered)
-```
-
-
-
-
-
-```{r}
-dat_alloy <- ss_dat_c_filtered%>%
-                          arrange(alloy_rep_id)%>%
-                          group_by(alloy_rep_id)%>%
-                          slice_head(n=1)%>%
-            ungroup()%>%
-            select(alloy_rep_id,alloy,Mo,Nb,Ta,V,W, rep)
-```
-
-
-```{r}
-df_coefs_t%>%
-  left_join(dat_alloy,
-                        by = "alloy_rep_id")%>%
-  filter(alloy %in% c("NbV","V","Nb"))%>%
-  mutate(rep = factor(rep))%>%
-  ggplot(aes(x=Nb,
-             y = val))+
-  geom_point(aes(color= rep))+
-  facet_wrap(~coef_names,
-             scales = "free")+
-  theme_bw()
-```
-
-
-```{r}
-out_dat_t <- df_coefs_t%>%
-              pivot_wider(names_from = "coef_names",
-                          values_from = "val")%>%
-              left_join(dat_alloy,
-                        by = "alloy_rep_id")
-
-export(out_dat_t,
-       file =here::here("Results",
-                        "ss_all_coefs_t.csv"))
-
-out_dat_c <- df_coefs_c%>%
-              pivot_wider(names_from = "coef_names",
-                          values_from = "val")%>%
-              left_join(dat_alloy,
-                        by = "alloy_rep_id")
-
-export(out_dat_c,
-       file =here::here("Results",
-                        "ss_all_coefs_c.csv"))
-```
-
-###importing the ordered coefficients,
-```{r}
-
-ord_coefs_t = read.csv("ordered_coefs_t.csv")
-ord_coefs_c = read.csv("ordered_coefs_c.csv")
-
-
-```
-
-
-*******
-dat_intercepts <- dat_coefs[1:21,]
-
-dat_intercepts <- dat_intercepts%>%
-                  separate(names,
-                           sep = "alloy(.*)",
-                           into = c("alloy"))%>%
-                  mutate(coef_type = "Intercept")
-
-
-dat_smooth_coefs <- dat_coefs[-c(1:21),]
-
-
-dat_smooth_coefs <- dat_smooth_coefs%>%
-                    pivot_wider(names_from = names,
-                                values_from = values)%>%
-                    pivot_longer(cols = starts_with("s"),
-                                 values_to = "values",
-                                 names_to = c("ignore","alloy","coef_type"),
-                             names_pattern = "s(scaled_strain):alloy(.*).(.)")
-
-******* 
-
-
-
-
-
-
 
 
