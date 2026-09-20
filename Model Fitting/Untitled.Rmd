@@ -1,0 +1,202 @@
+---
+title: "Explore Correlation Coefficients"
+output: html_document
+date: "Fall 2026"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      dev = "png",
+                      dpi =400)
+
+library(tidyverse)
+library(scales)
+library(ggnewscale)
+library(AlgDesign)
+theme_set(theme_bw()+
+            theme(text=element_text(size = 14),
+                  legend.box.margin = margin(-10,-10,-10,-10),
+                  legend.position = "none",
+                  legend.text = element_text(size=12)))
+library(mgcv)
+library(gridExtra)
+library(nloptr)
+library(latex2exp)
+library(collapse)
+library(lme4)
+library(Matrix)
+library(parallel)
+```
+
+## Viz Data
+
+```{r}
+metals <- c("Mo","Nb","Ta","V","W")
+properties <- c("log_max_strain",
+                "bc_1","bc_2","bc_3",
+                "bc_4","bc_5","bc_6")
+
+props <- c("ultimate_stress","ultimate_strain",
+           "toughness","young_mod")
+
+prop_ltx <- unname(TeX(c("$\\sigma_u$","$\\epsilon_f$",
+                         "$U_T$","$E$")))
+
+coefs_ltx <- unname(TeX(c("$\\ln(\\epsilon_f)$",
+                                  "$\\beta_1$","$\\beta_2$","$\\beta_3$",
+                               "$\\beta_4$", "$\\beta_5$", "$\\beta_6$")))
+
+
+n_prop <- length(properties)
+n_dim <- length(metals) - 1
+
+```
+
+```{r}
+source(here::here("Functions",
+                    "rm_mvgps_mat_mu_pred_functions.R"))
+
+
+dat_ss_c <- rio::import(here::here("Results",
+                                 "ss_all_ort_coefs_c_uns.csv"))
+
+dat_ss_c <- as_tibble(dat_ss_c)%>%
+              mutate(alloy_cnt = alloy_cnt.x)%>%
+              select(-alloy_cnt.x, - alloy_cnt.y)
+
+dat_ss_c <- dat_ss_c%>%
+            filter(!(alloy %in% metals))%>%
+            mutate(id_row = row_number())
+
+dat_ss_t <- rio::import(here::here("Results",
+                                 "ss_all_ort_coefs_t_uns.csv"))
+
+dat_ss_t <- as_tibble(dat_ss_t)%>%
+              mutate(alloy_cnt = alloy_cnt.x)%>%
+              select(-alloy_cnt.x, - alloy_cnt.y)
+
+dat_ss_t <- dat_ss_t%>%
+            filter(!(alloy %in% metals))%>%
+            mutate(id_row = row_number())
+
+dat_ss_all <- dat_ss_t%>%
+                filter(!(alloy %in% metals))%>%
+                mutate(type = "t")%>%
+                bind_rows(dat_ss_c%>%
+                            mutate(type ="c"))%>%
+                unite("alloy_id",
+                      Mo:W,remove = FALSE)%>%
+                arrange(alloy_id, rep, type)#%>%
+                  #filter(! alloy %in% metals)
+
+dat_ss_fil <- dat_ss_all%>%
+              ungroup()%>%
+              group_by(alloy_id)%>%
+              arrange(desc(rep))%>%
+              slice_head(n=1)%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))
+```
+
+Quaternaries data
+
+```{r}
+dat_ss_ter_c <- rio::import(here::here("Results",
+                                 "ss_ter_ort_coefs_c_uns.csv"))
+
+dat_ss_ter_t <- rio::import(here::here("Results",
+                                 "ss_ter_ort_coefs_t_uns.csv"))
+
+dat_ss_ter_c <- as_tibble(dat_ss_ter_c)
+
+dat_ss_ter_t <- as_tibble(dat_ss_ter_t)
+  
+
+max_ac <- max(dat_ss_fil$alloy_cnt)
+dat_ss_t_all <- dat_ss_t%>%
+  bind_rows(dat_ss_ter_t%>%
+              mutate(alloy_cnt = alloy_cnt + max_ac))%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))%>%
+  arrange(alloy_cnt)%>%
+  group_by(alloy_cnt)%>%
+  mutate(max_reps = max(rep))%>%
+  ungroup()%>%
+  filter(elements > 1,
+         max_reps > 1)
+
+dat_ss_c_all <- dat_ss_c%>%
+  bind_rows(dat_ss_ter_c%>%
+              mutate(alloy_cnt = alloy_cnt + max_ac))%>%
+  mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))%>%
+  arrange(alloy_cnt)%>%
+  group_by(alloy_cnt)%>%
+  mutate(max_reps = max(rep))%>%
+  ungroup()%>%
+  filter(elements > 1,
+         max_reps > 1)
+
+dat_ss_fil_all <- dat_ss_fil%>%
+  bind_rows(dat_ss_ter_c%>%
+              mutate(alloy_cnt = alloy_cnt + max_ac)%>%
+              group_by(alloy_cnt)%>%
+              arrange(desc(rep))%>%
+              slice_head(n=1)%>%
+              ungroup())%>%
+  arrange(alloy_cnt)
+
+
+dat_ss_ter_c <- as_tibble(dat_ss_ter_c)%>%
+                  pivot_longer(cols = all_of(properties),
+                               names_to = "property",
+                               values_to = "val_true")%>%
+                  arrange(alloy_cnt)
+
+dat_ss_ter_t <- as_tibble(dat_ss_ter_t)%>%
+                  pivot_longer(cols = all_of(properties),
+                               names_to = "property",
+                               values_to = "val_true")%>%
+                  arrange(alloy_cnt)
+
+X_ter <- dat_ss_ter_c%>%
+  group_by(alloy_cnt)%>%
+  slice_head(n=1)
+X_ter <- as.matrix(X_ter[,metals])
+
+X_ter_B <- dat_ss_ter_c%>%
+  group_by(alloy_cnt, rep)%>%
+  slice_head(n=1)
+
+X_ter_B <- as.matrix(X_ter_B[,metals])
+
+```
+
+
+```{r}
+out_nn_c <- compute_mean_var_fun(Y = as.matrix(dat_ss_t_all[,properties]),
+                              a_mult = rep(3,nrow(dat_ss_t_all)/3))
+
+out_nn_t <- compute_mean_var_fun(Y = as.matrix(dat_ss_c_all[,properties]),
+                              a_mult = rep(3,nrow(dat_ss_c_all)/3))
+```
+
+```{r}
+library(corrplot)
+```
+
+```{r}
+cov_t <- cov(out_nn_t$Y)
+testRes_t = cor.mtest(out_nn_t$Y, conf.level = 0.95)
+cov_c <- cov(out_nn_c$Y)
+testRes_c = cor.mtest(out_nn_c$Y, conf.level = 0.95)
+```
+
+```{r fig.width=4, fig.height=4}
+corrplot(cov2cor(cov_t), p.mat = testRes_t$p, method = 'circle', type = 'lower', insig='blank',
+         addCoef.col ='black', number.cex = 0.8,  diag=FALSE)
+```
+
+
+```{r}
+solve(cov_t)
+```
+
+
