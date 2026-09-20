@@ -1,0 +1,60 @@
+---
+title: "Testing for Homosedaskticity"
+output: html_document
+date: "2026-09-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Assumptions
+
+$$
+y(x) \sim \mathcal{N}\left(\mu(x), \Sigma(x)\right)
+$$
+
+
+Alternative is that 
+
+$$
+y(x) \sim \mathcal{N}\left(\mu(x), \Sigma\right)
+$$
+
+That is, the data is homosedasktic. 
+
+To test that, we need to first eliminate the influence of $\mu$ such that
+
+$$
+e(x) = y(x) - \mu(x) \approx y(x) - \bar{y}(x)
+$$
+
+Note that 
+
+$$
+\bar{y}(x) \sim \mathcal{N}\left(\mu(x), \dfrac{\Sigma(x)}{n} \right)
+$$
+This impacts the "reproducibility" of the pattern, however, it should not impact the following test
+
+The distribution of the errors from the mean is:
+
+$$
+e(x) \sim \mathcal{N}\left(0, \Sigma(x) \dfrac{n -1}{n} \right)
+$$
+This comes from a standard result of the distribution of difference between observations the sample mean of a sample of a Gaussian random variable of size $n$, that is:
+
+$$
+\begin{aligned}
+x &\sim \mathcal{N}(\mu, \sigma^2) \\
+x_i - \bar{X}_n &\sim \mathcal{N}(0, \sigma^2 \dfrac{n-1}{n})
+\end{aligned}
+$$
+Back to the test, we have a sample $e$ of size $N$ (total observations, regardless of location), then under homosedaskticity, they are iid Gaussian random variables and we can conduct the following tests:
+
+1. Use a Normality test to find if $e$ follows a Gaussian distribution (this is done in each dimension or coefficient type). The test can be the Anderson-Darling (AD), Kolmogorov-Smirnov (KS) or similar upon estimation of the constant $\sigma$ parameter (AD and KS can do the estimation and adjustment automatically). The test can be conducted on the full sample or in subsets (i.e., individual binaries).
+
+2. Fit a regression model to $\sqrt{|e|/\hat{\sigma}}$, this model should be a splines regression to allow for heterosedaskticity. Then, conduct an anova test on the fitted model to see if the splines explain the variation. This test is hard to do in the full set of observations since the search space is very large and can only be reliably conducted on individual binaries data.
+
+
+
+
