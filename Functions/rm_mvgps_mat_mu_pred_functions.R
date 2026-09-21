@@ -978,6 +978,8 @@ predict_mv_hom_gp_fun <- function(newX,newX_pred = NULL,
   sd2 <- rep(diag(pred_obj$Sig),n_locs) -
     fast_diagMK_fun(pred_obj$Ki, kx)
   
+  sd2 <- pmax(sd2, 0)
+  
   sd2 <- pred_obj$tau * sd2
   
   overall_mean <- drop( newX_pred %*% pred_obj$beta0 +
@@ -1215,6 +1217,8 @@ predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
   sd2 <- rep(diag(pred_obj$Sig),n_locs) - diag(kx %*% tcrossprod(pred_obj$Ki, kx))
     #fast_diagMK_fun(pred_obj$Ki, kx)
   
+  sd2 <- pmax(sd2, 0)
+  
   sd2 <- pred_obj$tau * sd2
   
   if(sd2_only) return(sd2)
@@ -1353,6 +1357,7 @@ import_predict_mod_gp_sampling_fun <- function(newX,Xdesign,
                                           n_samples = 1e3, cof_level= 0.05,
                                           rseed = 1,
                                           prop_names,
+                                          imspe_accuracy = 0.01,
                                           pred_type = "mean"){
   if(!is.null(file_path)) load(file_path)
   if(is.null(nrow(newX))) newX <- matrix(newX,nrow =1)
@@ -1367,7 +1372,8 @@ import_predict_mod_gp_sampling_fun <- function(newX,Xdesign,
                                   pred_obj = pol[[mod_id]])
   }
   
-  imspe <- IMSPE_MV_Adjust(pred_obj = pol[[mod_id]])
+  imspe <- IMSPE_MV_Adjust(pred_obj = pol[[mod_id]],
+                           accuracy = imspe_accuracy)
   tau <- pol[[mod_id]]$tau
   sum_S <- sum(diag(pol[[mod_id]]$Sig))
   

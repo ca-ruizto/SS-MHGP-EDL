@@ -157,7 +157,7 @@ IMSPE_MV_NI <- function(pred_obj, max_eval = 1e5, return_object = F ){
   return(int_result$integral )
 }
 
-IMSPE_MV_Adjust <- function(pred_obj, accuracy = 0.01){
+IMSPE_MV_Adjust <- function(pred_obj, accuracy = 0.005){
   imspe <- IMSPE_MV(pred_obj = pred_obj) # analytical
   
   a <- IMSPE_MV_NI(pred_obj = pred_obj, #rough integral
@@ -170,10 +170,10 @@ IMSPE_MV_Adjust <- function(pred_obj, accuracy = 0.01){
                    max_eval = 1e3,
                    return_object = T)
   
-  if(b$error < accuracy) return(b$integral)
+  if(b$error < accuracy*b$integral) return(b$integral)
   
-  aa <- (log(b$error) - log(a$error) ) / (log10(b$functionEvaluations) - log10(a$functionEvaluations))
-  nn <- (log(accuracy) - log(a$error)) / aa + log10(a$functionEvaluations)
+  aa <- (log10(b$error) - log10(a$error) ) / (log10(b$functionEvaluations) - log10(a$functionEvaluations))
+  nn <- (log10(accuracy*b$integral) - log10(a$error)) / aa + log10(a$functionEvaluations)
   
   b <- IMSPE_MV_NI(pred_obj = pred_obj, #final estimate
                    max_eval = min(10^nn, 5e4),

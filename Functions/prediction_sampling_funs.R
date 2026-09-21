@@ -137,6 +137,7 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
                                         pred_type = "mean"){
   #coefs gp are log strain, other coefs
   
+  
   if(is.null(dim(mu_gp))) mu_gp <- matrix(mu_gp, nrow = 1)
   if(is.null(dim(var_gp))) var_gp <- matrix(var_gp, nrow = 1)
   
@@ -188,7 +189,8 @@ physical_prop_sampling_funs <- function(mu_gp, var_gp, n_funs, n_samples = 1e3,
     
     th_mu[i] <- pred_fun(xig)
     thq <- quantile(xig, probs= c(cof_level/2,
-                                  1- cof_level/2))
+                                  1- cof_level/2),
+                    na.rm = TRUE)
     th_lb[i] <- thq[1]
     th_ub[i] <- thq[2]
     
