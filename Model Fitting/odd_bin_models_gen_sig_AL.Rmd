@@ -52,7 +52,9 @@ dat_ss_c <- as_tibble(dat_ss_c)
 
 dat_ss_c <- dat_ss_c%>%
             filter(!(alloy %in% metals))%>%
-            mutate(id_row = row_number())
+            mutate(id_row = row_number(),
+                   alloy_cnt = alloy_cnt.x)%>%
+            select(-alloy_cnt.x, alloy_cnt.y)
 
 dat_ss_t <- rio::import(here::here("Results",
                                  "ss_all_ort_coefs_t_uns.csv"))
@@ -61,7 +63,9 @@ dat_ss_t <- as_tibble(dat_ss_t)
 
 dat_ss_t <- dat_ss_t%>%
             filter(!(alloy %in% metals))%>%
-            mutate(id_row = row_number())
+            mutate(id_row = row_number(),
+                   alloy_cnt = alloy_cnt.x)%>%
+            select(-alloy_cnt.x, alloy_cnt.y)
 
 
 ```
@@ -119,8 +123,8 @@ joint_cov <- het_sv <-joint_ls_gp <- F
 max_train_iters <- 10
 scale_vars <- "after"
 al_steps <- 6
-exp_name <- "train_bin_rl_gen_sig_prior_gam_int_m32_2026_05_25"
-only_int <- T
+exp_name <- "train_bin_rl_gen_sig_prior_gam_pol_m52_2026_05_25"
+only_int <- F
 ini_seed <- 233545
 np_seed <- 12143
 verbose <- F
@@ -129,12 +133,12 @@ prior_th <- "gam"
 sig_type <- "general"
 n_order <- 3
 ini_prev_mod <- T
-cov_type = "Matern3_2" #"Gaussian", "Matern5_2", "Matern3_2"
+cov_type = "Matern5_2" #"Gaussian", "Matern5_2", "Matern3_2"
 
 
 cor_fun_test <- function(theta, D_mat) general_cor_fun(theta = theta,
                                                        D_mat = D_mat,
-                                                       kernel_fun = matern_3_2_fun) #matern_5_2_fun gaus_ker_fun
+                                                       kernel_fun = matern_5_2_fun) #matern_5_2_fun gaus_ker_fun
 ```
 
 ```{r}
@@ -846,7 +850,7 @@ for(iter in 0:5){
   
   save(np_id_h,
      file = here::here("Results","Fixed Data",
-                       "ALV2_26_prior_gam_np_h_gen_sig_int_m32.RData"))
+                       "ALV2_26_prior_gam_np_h_gen_sig_pol_m52.RData"))
   
 }
 

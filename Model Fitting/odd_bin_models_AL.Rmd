@@ -52,7 +52,9 @@ dat_ss_c <- as_tibble(dat_ss_c)
 
 dat_ss_c <- dat_ss_c%>%
             filter(!(alloy %in% metals))%>%
-            mutate(id_row = row_number())
+            mutate(id_row = row_number(),
+                   alloy_cnt = alloy_cnt.x)%>%
+            select(-alloy_cnt.x, alloy_cnt.y)
 
 dat_ss_t <- rio::import(here::here("Results",
                                  "ss_all_ort_coefs_t_uns.csv"))
@@ -61,7 +63,9 @@ dat_ss_t <- as_tibble(dat_ss_t)
 
 dat_ss_t <- dat_ss_t%>%
             filter(!(alloy %in% metals))%>%
-            mutate(id_row = row_number())
+            mutate(id_row = row_number(),
+                   alloy_cnt = alloy_cnt.x)%>%
+            select(-alloy_cnt.x, alloy_cnt.y)
 
 
 ```
