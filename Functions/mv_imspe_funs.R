@@ -258,7 +258,9 @@ cIMSPE_MV <- function(x, pred_obj,
   
   if(cv) return(sfn * pred_obj$tau * sum(result/as.vector(pred_obj$beta0^2)) )
   
-  return(pred_obj$tau * sum(result)*sfn )
+  out<- pred_obj$tau * sum(result)*sfn
+  
+  return( out )
 }
 
 
@@ -341,12 +343,76 @@ cIMSPE_MV_new_X_batch <- function(x, pred_obj,
   
   pred_obj_new$Ki <- chol2inv(chol(CS_lam))
   
-  return(cIMSPE_MV(x= NULL,
-                   id = nrow(pred_obj_new$X0),
-                   pred_obj = pred_obj_new,
-                   reps = reps - 1,
-                   Wijs = Wijs_new,
-                   cv = cv))
+  a <- cIMSPE_MV(x= NULL,
+                 id = nrow(pred_obj_new$X0),
+                 pred_obj = pred_obj_new,
+                 reps = reps - 1,
+                 Wijs = Wijs_new,
+                 cv = cv)
+  
+  
+  return(a)
+  
+}
+
+cIMSPE_MV_new_X_batch_int <- function(x, pred_obj,
+                                  reps = 2,
+                                  scale_factor = 1,
+                                  Wijs = NULL,
+                                  cv = T,
+                                  rel_acc = 0.01){
+  
+  if(is.null(dim(x))) x<- matrix(x, nrow = 1)
+  
+  pred_obj_new <- pred_obj
+  
+  #update Wijs
+  if(is.null(Wijs)) Wijs <- Wij_mv(X = pred_obj$X0,
+                                   theta = pred_obj$theta,
+                                   scale_factor = scale_factor,
+                                   cov_type = pred_obj$cov_type)
+  newWijs <- Wij_mv(X = x,
+                    X2 = pred_obj$X0, 
+                    theta = pred_obj$theta,
+                    scale_factor = scale_factor,
+                    cov_type = pred_obj$cov_type)
+  
+  w11 <- Wij_mv(X2 = x, X = x, 
+                theta = pred_obj$theta, 
+                scale_factor = scale_factor,
+                cov_type = pred_obj$cov_type)
+  
+  n_w <- nrow(Wijs)
+  Wijs_new <- diag( n_w+ 1)
+  Wijs_new[1:n_w, 1:n_w] <- Wijs
+  Wijs_new[n_w+1,] <- c(as.vector(newWijs), w11[1])
+  Wijs_new[,n_w + 1] <- c(as.vector(newWijs), w11[1])
+  
+  
+  #update X0 and Ki
+  
+  pred_obj_new$X0 <- rbind(pred_obj$X0,x)
+  pred_obj_new$a_mult <- c(pred_obj$a_mult, 3)
+  
+  new_lambda <- predict_mv_het_gp_fun(pred_obj = pred_obj, 
+                                      newX = x, 
+                                      lambda_only = TRUE)
+  pred_obj_new$Lambda <- c(pred_obj$Lambda , 
+                           as.vector(new_lambda))
+  
+  A_mult <- rep(pred_obj_new$a_mult,
+                each = pred_obj$n_properties)
+  D0 <- mv_dist_fun(X =pred_obj_new$X0)
+  C <- pred_obj_new$cor_fun_gp(D_mat = D0, 
+                               theta = pred_obj_new$theta)
+  CS <- kronecker(C,pred_obj_new$Sig)
+  CS_lam <- CS + diag(pred_obj_new$Lambda/A_mult +
+                        pred_obj_new$eps)
+  
+  pred_obj_new$Ki <- chol2inv(chol(CS_lam))
+  
+  return(IMSPE_MV_Adjust(pred_obj_new,
+                         accuracy = rel_acc))
   
 }
 
@@ -359,7 +425,7 @@ cIMSPE_MV_new_X_batch_list <- function(x, pred_obj,
   out <- 0
   
   for( i in 1:length(pred_obj)){
-    out <- out + cIMSPE_MV_new_X_batch(x = x,
+    out <- out + cIMSPE_MV_new_X_batch_int(x = x,
                                        pred_obj = pred_obj[[i]],
                                        reps = reps,
                                        scale_factor = scale_factor,
@@ -575,7 +641,7 @@ IMSPE_MV_batch_search <- function(pred_obj,  Xcand = NULL,
                    id_cand = NULL)
   
   ## Optimization new batch
-  cIMSPE_MV_new_X_batch_f <- cIMSPE_MV_new_X_batch
+  cIMSPE_MV_new_X_batch_f <- cIMSPE_MV_new_X_batch_int
   
   if(n_block > 1) cIMSPE_MV_new_X_batch_f <- cIMSPE_MV_new_X_batch_list
   

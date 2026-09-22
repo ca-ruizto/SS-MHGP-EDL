@@ -74,8 +74,9 @@ compute_mean_var_internal <- function(Y,a_mult,n_prop,n_unique){
   idx_use <- which(a_mult > 1)
   y_bar <- rep(0, n_prop * n_unique)
   var_mat <- NULL
+  cv_mat <- vector(mode = "list")
   
-  j <- 0
+  j <- k <- 0
   keep_v <- NULL
   for(i in 1:n_unique) {
     idx_p <- 1:n_prop + (i-1)*n_prop
@@ -85,10 +86,12 @@ compute_mean_var_internal <- function(Y,a_mult,n_prop,n_unique){
       j <- j + 1
       id_y <- n_last + 1:a_mult[i]
       y_bar[idx_p] <- colMeans(Y[id_y,])
-      v_temp <- rep(0,n_prop)
-      for( k in 1:n_prop) v_temp[k] <- var(Y[id_y, k])
+      cv_temp <- cov(Y[id_y,])
+      #for( k in 1:n_prop) v_temp[k] <- var(Y[id_y, k])
+      v_temp <- diag(cv_temp)
       
       if(min(v_temp)>0){
+        k <- k + 1
         keep_v <- c(keep_v,
                     j)
         if(j == 1){
@@ -97,6 +100,7 @@ compute_mean_var_internal <- function(Y,a_mult,n_prop,n_unique){
           var_mat <- rbind(var_mat,
                            v_temp)
         }
+        cv_mat[[k]] <- cv_temp
       }
     }
     
@@ -105,7 +109,9 @@ compute_mean_var_internal <- function(Y,a_mult,n_prop,n_unique){
   }
   return(list(y_bar = y_bar,
               idx = idx_use[keep_v],
-              var_mat = var_mat))
+              a_mult_use = a_mult[keep_v],
+              var_mat = var_mat,
+              cv_mat = cv_mat))
 }
 
 compute_mean_var_fun <- function(Y, a_mult, rescale_y = "after"){
@@ -219,29 +225,95 @@ initial_delta_reg_fun <- function(var_mat, X,
   return(result)
 }
 
-ini_pars_hom_fun <- function(rs = NULL, n_dim, n_prop, cov_bp = "independent",
+fast_ini_sig <- function(A_list, n_list, iters = 50, 
+                    eps = sqrt(.Machine$double.eps)) {
+  n_dim <- nrow(A_list[[1]])
+  n_rank <- floor(n_dim + (1 - sqrt(8*n_dim + 1))/2 )
+  
+  w <- n_list - 1
+  S <- Reduce(`+`, Map(`*`, w, A_list)) / sum(w)          # pooled covariance
+
+  g <- (1 - n_rank / (2 * n_dim)) / diag(solve(S))               # Joreskog start
+  for (it in seq_len(iters)) {
+    s  <- sqrt(g)
+    e  <- eigen(S / outer(s, s), symmetric = TRUE)        # values in decreasing order
+    th <- e$values[1:n_rank]
+    U  <- e$vectors[, 1:n_rank, drop = FALSE]
+    L  <- s * sweep(U, 2, sqrt(pmax(th - 1, 0)), `*`)     # D^{1/2} U (Theta - I)^{1/2}
+    g <- pmax(diag(S - tcrossprod(L)), eps)
+  }
+  list(L = L, g = g, Sigma0 = tcrossprod(L) + diag(g, n_dim))
+}
+
+repar_low_rank_L <- function(L, g) {
+  n_rank  <- ncol(L)
+  Q  <- qr.Q(qr(t(L[1:n_rank, , drop = FALSE])))            # L[1:m,] %*% Q is lower triangular
+  Lr <- L %*% Q
+  Lr <- sweep(Lr, 2, sign(diag(Lr[1:n_rank, , drop = FALSE])), `*`)
+  v  <- Lr[1, 1]^2
+  list(v = v, Lr = Lr / Lr[1, 1], gv = g / v)
+}
+
+ini_pars_hom_fun <- function(rs = NULL, n_dim, n_prop, n_rank = NULL,
+                             n_rank_pars = NULL,
+                             cov_bp = "independent",
                             prior_mean = NULL,
                              prev_pars = NULL,
                              log_bounds = log(c(1e-2,2,50))){
   
+  n_rank <- n_rank_pars <- NULL
   if(is.null(prev_pars)){
     tmp <- log(rs$var_y[1])
     g <- log(rs$var_rep) - tmp
     s <- log(rs$var_y[-1]) - tmp
+    #diag(cv_avg) <- diag(cv_avg) - min_diag
+    #tmp <- cv_avg[1,1]
+    #cv_avg <- cv_avg/tmp
+    #g <- log(min_diag) - log(tmp)
+    #s <- log(diag(cv_avg)[-1])
+    
     s_lb <- s - log_bounds[3]
     s_ub <- s+ log_bounds[3]
     g_lb <- g - log_bounds[3]
     
-    if(cov_bp != "independent"){
+    if(cov_bp == "gen"){
       n_off <- n_prop * (n_prop + 1) / 2 - n_prop 
-      s <- c(s,rep(0, n_off))
+      #L <- t(chol(cv_avg))
+      s <- c(s,
+            rep(0, n_off))
       s_lb <- c(s_lb,rep(-2,n_off))
       s_ub <- c(s_ub, rep(2,n_off))
     }
+    
+    if(cov_bp == "low-rank"){
+      sig_ini <- fast_ini_sig(A_list  = rs$cv_mat,
+                              n_list  = rs$a_mult_use)
+      sig_ini <- repar_low_rank_L(L = sig_ini$L,
+                                  g = sig_ini$g)
+      
+      Lr <- sig_ini$Lr
+      n_rank <- ncol(Lr)
+      Lr_pars <- Lr[lower.tri(Lr)]
+      n_off <- length(Lr_pars)
+
+      s <- log(diag(Lr)[-1])
+               
+      s_lb <- c( s - log_bounds[3],rep(-2,n_off))
+      s_ub <- c( s + log_bounds[3], rep(2,n_off))
+      s <- c(s, Lr_pars)
+      n_rank_pars <- length(s) + 1
+      
+      g <- log(sig_ini$gv)
+      g_lb <- g - log_bounds[3]
+    }
   }else{
     n_cov_pars <- n_prop
-    if(cov_bp != "independent"){
+    if(cov_bp == "gen"){
       n_cov_pars <- n_prop * (n_prop + 1) / 2
+      n_rank <- 0
+    }else{
+      n_cov_pars <- n_rank_pars
+      n_rank <- n_rank
     }
     s <- prev_pars[n_dim + 1:(n_cov_pars -1)]
     g <- prev_pars[ 1:(n_prop)+ n_dim + n_cov_pars -1]
@@ -269,7 +341,9 @@ ini_pars_hom_fun <- function(rs = NULL, n_dim, n_prop, cov_bp = "independent",
   
   return(list(ini = ini_sol,
               lb = lb,
-              ub = ub))
+              ub = ub,
+              n_rank = n_rank,
+              n_rank_pars = n_rank_pars))
   
 }
 
@@ -304,6 +378,7 @@ update_ini_pars_fun <- function(new_ini, ini_sol, log_bounds = log(2)){
 pars_hom_to_het_reg <- function(hom_pars,
                             n_properties, 
                             cov_bp = "independent",
+                            n_rank= NULL, n_rank_pars = NULL,
                             var_mat,X,pX,idx_use,
                             cor_fun,
                             phi_h,
@@ -318,7 +393,7 @@ pars_hom_to_het_reg <- function(hom_pars,
   
   n_cov_pars <- n_properties
   
-  if(cov_bp != "independent"){
+  if(cov_bp == "gen"){
     n_cov_pars <- n_properties * (n_properties + 1) / 2
     hp2 <- hom_pars[1:(n_cov_pars-1) + n_dim]
     low_b <- c(rep(log_bounds[1],n_dim),
@@ -327,7 +402,16 @@ pars_hom_to_het_reg <- function(hom_pars,
     upp_b <- c(rep(log_bounds[2],n_dim),
                rep(Inf, n_properties - 1),
                rep(2, length(hp2) - n_properties + 1 ))
-  }else{
+  }else if (cov_bp == "low-rank"){
+    n_cov_pars <- n_rank_pars
+    hp2 <- hom_pars[1:(n_cov_pars-1) + n_dim]
+    low_b <- c(rep(log_bounds[1],n_dim),
+               rep(-Inf, n_rank - 1),
+               rep(-2, length(hp2) - n_rank + 1 ))
+    upp_b <- c(rep(log_bounds[2],n_dim),
+               rep(Inf, n_rank - 1),
+               rep(2, length(hp2) - n_rank + 1 ))
+  }else {
     hp2 <- hom_pars[1:(n_cov_pars-1) + n_dim]
     low_b <- c(rep(log_bounds[1],n_dim),
                hp2 - log_bounds[3])
@@ -380,10 +464,22 @@ pars_hom_to_het_reg <- function(hom_pars,
   
   return(list(ini=het_pars,
               ub = upp_b,
-              lb = low_b))
+              lb = low_b,
+              n_rank = n_rank,
+              n_rank_pars = n_rank_pars))
 }
 
-
+low_rank_chol_fun <- function(par,n_dim, n_rank){
+  #returns a low-rank correlation matrix under log-chol parameterization
+  
+  L <- matrix(0,nrow = n_dim,
+              ncol = n_rank)
+  diag(L) <- exp(par[1:n_rank])
+  L[lower.tri(L)] <- par[-(1:n_rank)]
+  L <- Matrix(L, sparse = T)
+  
+  return(tcrossprod(L))
+}
 
 log_chol_fun <- function(par,n_dim){
   #returns a correlation matrix under log-chol parameterization
@@ -639,6 +735,8 @@ fit_mvgp_sv_fun <- function(Y,X,
                             n_edge = 0,
                             cor_fun,cor_sv_fun = NULL,
                             cov_bp = "independent", # covariance between processes
+                            n_rank = NULL,
+                            n_rank_pars = NULL,
                             prior_theta = NULL,
                             het_sv = T,
                             ini_pars , ub = NULL,lb = NULL,
@@ -699,6 +797,10 @@ fit_mvgp_sv_fun <- function(Y,X,
   if(cov_bp == "independent"){
     cov_fun = log_chol_diag_spa_fun
     n_cov_pars <- n_properties
+  }else if(cov_bp == "low-rank"){
+    cov_fun = function(x) low_rank_chol_fun(x, n_dim = n_properties,
+                                             n_rank = n_rank)
+    n_cov_pars <-  n_rank_pars
   }else{
     cov_fun = function(x) log_chol_fun(x, n_dim = n_properties)
     n_cov_pars <- n_properties * (n_properties + 1) / 2
@@ -820,6 +922,12 @@ fit_mvgp_sv_fun <- function(Y,X,
                         lb = lb,
                         ub = ub,
                         opts = nlopt_ctrl)
+      
+      if( is.na(opt_sol$objective)){
+        continue <- FALSE
+        next
+      }
+      
       sol_hist[[iteration]] <- opt_sol
       
       
@@ -836,6 +944,8 @@ fit_mvgp_sv_fun <- function(Y,X,
                 Y = Y,
                 y_bar = y_bar,
                 rs_y = rescale_y,
+                n_rank = n_rank,
+                n_rank_pars = n_rank_pars,
                 rs_mean = rs$rs_mean,
                 rs_mult = rs$rs_mult))
      
@@ -845,6 +955,8 @@ fit_mvgp_sv_fun <- function(Y,X,
                 Y = Y,
                 y_bar = y_bar,
                 rs_y = rescale_y,
+                n_rank = n_rank,
+                n_rank_pars = n_rank_pars,
                 rs_mean = rs$rs_mean,
                 rs_mult = rs$rs_mult))
   }
@@ -861,6 +973,8 @@ construct_pred_hom_obj_fun <- function(pars,X, Y_mat, y_bar,
                                    joint_cov= T,
                                    cov_type= "Matern5_2",
                                    cov_bp = "independent",
+                                   n_rank = NULL,
+                                   n_rank_pars = NULL,
                                    rescale_y=F,
                                    rs_mean = NULL,
                                    rs_mult = NULL,
@@ -874,6 +988,10 @@ construct_pred_hom_obj_fun <- function(pars,X, Y_mat, y_bar,
   if(cov_bp == "independent"){
     cov_fun = log_chol_diag_spa_fun
     n_cov_pars <- n_properties
+  }else if(cov_bp == "low-rank"){
+    cov_fun = function(x) low_rank_chol_fun(x, n_dim = n_properties,
+                                            n_rank = n_rank)
+    n_cov_pars <-  n_rank_pars
   }else{
     cov_fun = function(x) log_chol_fun(x, n_dim = n_properties)
     n_cov_pars <- n_properties * (n_properties + 1) / 2
@@ -1023,6 +1141,8 @@ construct_pred_obj_fun <- function(pars,X,
                                    cor_fun_gp_sv = NULL,
                                    cov_type= "Matern5_2",
                                    cov_bp = "independent",
+                                   n_rank = NULL,
+                                   n_rank_pars = NULL,
                                    rescale_y=F,
                                    rs_mean = NULL,
                                    rs_mult = NULL,
@@ -1036,6 +1156,10 @@ construct_pred_obj_fun <- function(pars,X,
   if(cov_bp == "independent"){
     cov_fun = log_chol_diag_spa_fun
     n_cov_pars <- n_properties
+  }else if(cov_bp == "low-rank"){
+    cov_fun = function(x) low_rank_chol_fun(x, n_dim = n_properties,
+                                            n_rank = n_rank)
+    n_cov_pars <-  n_rank_pars
   }else{
     cov_fun = function(x) log_chol_fun(x, n_dim = n_properties)
     n_cov_pars <- n_properties * (n_properties + 1) / 2

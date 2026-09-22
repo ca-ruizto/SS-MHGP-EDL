@@ -120,17 +120,18 @@ dat_ss_fil <- dat_ss_all%>%
 
 ```{r}
 joint_cov <- het_sv <-joint_ls_gp <- F
+eps_global <- 1e-20 #1e-10, -20 for specially hard cases
 max_train_iters <- 10
 scale_vars <- "after"
 al_steps <- 6
-exp_name <- "train_bin_rl_gen_sig_prior_gam_pol_m52_2026_05_25"
+exp_name <- "train_bin_rl_low_rank_prior_gam_pol_m52_2026_09_21"
 only_int <- F
 ini_seed <- 233545
 np_seed <- 12143
 verbose <- F
 pen_par <- F
 prior_th <- "gam"
-sig_type <- "general"
+sig_type <- "low-rank"
 n_order <- 3
 ini_prev_mod <- T
 cov_type = "Matern5_2" #"Gaussian", "Matern5_2", "Matern3_2"
@@ -316,7 +317,7 @@ xx <- ilr_bounded_minmax_additive(as.matrix(mixture_dat),
 xx$z_min
 xx$z_max
 #xx$u[1:11,]
-plot(xx$u)
+#plot(xx$u)
 
 xp <- seq(0,1, by = 0.01)
 bin_xx <- tibble(X1 = 0,X2 = 0,X3 = 0,
@@ -552,6 +553,8 @@ for(iter in 0:5){
                             a_mult = a_reps,
                             cor_fun = cor_fun_test,
                             cov_bp = sig_type,
+                            n_rank = ini_hom_c$n_rank,
+                            n_rank_pars = ini_hom_c$n_rank_pars,
                             joint_cov = joint_cov,
                             het_sv = F,
                             lb = ini_hom_c$lb,
@@ -562,6 +565,7 @@ for(iter in 0:5){
                             rescale_y = scale_vars,
                             rs = result_stats_c,
                             verbose = verbose,
+                            eps = eps_global,
                             prior_theta = priors$pf)
     
     eval_log_c <- fit_mvgp_sv_fun(Y = Y_train_c,
@@ -570,12 +574,15 @@ for(iter in 0:5){
                             X_pred_all = Basis_X_all,
                         a_mult = a_reps,
                         cov_bp = sig_type,
+                        n_rank = ini_hom_c$n_rank,
+                            n_rank_pars = ini_hom_c$n_rank_pars,
                         cor_fun = cor_fun_test,
                         joint_cov = joint_cov,
                         het_sv = F,
                         ini_pars = mod_hom_c$opt_sol$solution,
                         joint_ls_gp = joint_ls_gp,
                         opt = F,
+                        eps = eps_global,
                         rescale_y = scale_vars,
                             verbose = verbose,
                         prior_theta = priors$pf)
@@ -594,6 +601,8 @@ for(iter in 0:5){
                             cor_fun = cor_fun_test,
                             joint_cov = joint_cov,
                             cov_bp = sig_type,
+                            n_rank = ini_hom_t$n_rank,
+                            n_rank_pars = ini_hom_t$n_rank_pars,
                             het_sv = F,
                             lb = ini_hom_t$lb,
                             ub = ini_hom_t$ub,
@@ -603,6 +612,7 @@ for(iter in 0:5){
                             rescale_y = scale_vars,
                             rs = result_stats_t,
                             verbose = verbose,
+                            eps = eps_global,
                             prior_theta = priors$pf)
     
     
@@ -613,6 +623,8 @@ for(iter in 0:5){
                             a_mult = a_reps,
                             cor_fun = cor_fun_test,
                             cov_bp = sig_type,
+                            n_rank = ini_hom_t$n_rank,
+                            n_rank_pars = ini_hom_t$n_rank_pars,
                             joint_cov = joint_cov,
                             het_sv = F,
                             ini_pars = mod_hom_t$opt_sol$solution,
@@ -621,6 +633,7 @@ for(iter in 0:5){
                             opt = F,
                             rescale_y = scale_vars,
                             verbose = verbose,
+                            eps = eps_global,
                             prior_theta = priors$pf)
     
     ### Heterogeneous solution
@@ -646,6 +659,8 @@ for(iter in 0:5){
                                pX = test_pX_ilr,
                                X = X_train_ilr,
                                cov_bp = sig_type,
+                               n_rank = mod_hom_t$n_rank,
+                               n_rank_pars = mod_hom_t$n_rank_pars,
                                edge_locs = pX_edge_ilr,
                                var_mat = result_stats_t$var_mat,
                                idx_use = result_stats_t$idx,
@@ -669,6 +684,8 @@ for(iter in 0:5){
                         n_edge = n_ed,
                         cor_fun = cor_fun_test,
                         cov_bp = sig_type,
+                        n_rank = ini_sol_t$n_rank,
+                        n_rank_pars = ini_sol_t$n_rank_pars,
                         joint_cov = joint_cov,
                         het_sv = T,
                         ini_pars = ini_sol_t$ini,
@@ -678,7 +695,7 @@ for(iter in 0:5){
                         joint_ls_gp = joint_ls_gp,
                         max_it = max_train_iters,
                         rescale_y = scale_vars,
-                        #eps = 1e-7,
+                        eps = eps_global,
                         rs = result_stats_t,
                             verbose = verbose,
                         prior_theta = priors$pf)
@@ -697,6 +714,8 @@ for(iter in 0:5){
                            pX = test_pX_ilr,
                            X = X_train_ilr,
                            cov_bp = sig_type,
+                           n_rank = mod_hom_c$n_rank,
+                           n_rank_pars = mod_hom_c$n_rank_pars,
                            edge_locs = pX_edge_ilr,
                            var_mat = result_stats_c$var_mat,
                            idx_use = result_stats_c$idx,
@@ -719,6 +738,8 @@ for(iter in 0:5){
                             pX = test_pXB_ilr,
                             a_mult_px =am_px,
                             cov_bp = sig_type,
+                            n_rank = ini_sol_c$n_rank,
+                            n_rank_pars = ini_sol_c$n_rank_pars,
                             n_edge = n_ed,
                             cor_fun = cor_fun_test,
                             joint_cov = joint_cov,
@@ -728,7 +749,7 @@ for(iter in 0:5){
                             lb = ini_sol_c$lb,
                             penalty = pen_par,
                             joint_ls_gp = F,
-                            #eps = 1e-7,
+                            eps = eps_global,
                             max_it = max_train_iters,
                             rescale_y = scale_vars,
                             rs = result_stats_c,
@@ -753,10 +774,13 @@ for(iter in 0:5){
                                         #eps = 1e-7,
                                         cor_fun_gp = cor_fun_test,
                                         cov_type = cov_type,
+                                        n_rank = mod_t$n_rank,
+                                        n_rank_pars = mod_t$n_rank_pars,
                                         cov_bp = sig_type,
                                         rescale_y = mod_t$rs_y,
                                         rs_mean = mod_t$rs_mean,
-                                        rs_mult = mod_t$rs_mult)
+                                        rs_mult = mod_t$rs_mult,
+                                        eps = eps_global)
 
     test_pred_obj_c <- construct_pred_obj_fun(pars = mod_c$opt_sol$solution,
                                             X = X_train_ilr,
@@ -767,6 +791,8 @@ for(iter in 0:5){
                                             pX = test_pXB_ilr,
                                             n_edge = n_ed,
                                             n_properties = n_prop,
+                                            n_rank = mod_c$n_rank,
+                                            n_rank_pars = mod_c$n_rank_pars,
                                             a_mult = a_reps,
                                             a_mult_pX = am_px,
                                             #eps = 1e-7,
@@ -775,7 +801,8 @@ for(iter in 0:5){
                                             cov_bp = sig_type,
                                             rescale_y = mod_c$rs_y,
                                             rs_mean = mod_c$rs_mean,
-                                            rs_mult = mod_c$rs_mult)
+                                            rs_mult = mod_c$rs_mult,
+                                            eps = eps_global)
     
     test_pred_obj_hom_c <- construct_pred_hom_obj_fun(pars = mod_hom_c$opt_sol$solution,
                                                       X= X_train_ilr,
@@ -784,13 +811,16 @@ for(iter in 0:5){
                                                       X_pred = Basis_X,
                                                       X_pred_all = Basis_X_all,
                                                       n_properties = n_prop,
+                                                      n_rank = mod_hom_c$n_rank,
+                                                      n_rank_pars = mod_hom_c$n_rank_pars,
                                                       a_mult = a_reps,
                                                       cor_fun_gp = cor_fun_test,
                                                       cov_type = cov_type,
                                                       cov_bp = sig_type,
                                                       rescale_y = mod_hom_c$rs_y,
                                                       rs_mean = mod_hom_c$rs_mean,
-                                                      rs_mult = mod_hom_c$rs_mult)
+                                                      rs_mult = mod_hom_c$rs_mult,
+                                                      eps = eps_global)
     
     test_pred_obj_hom_t <- construct_pred_hom_obj_fun(pars = mod_hom_t$opt_sol$solution,
                                                       X= X_train_ilr,
@@ -798,6 +828,8 @@ for(iter in 0:5){
                                                       y_bar = mod_hom_t$y_bar,
                                                       X_pred = Basis_X,
                                                       X_pred_all = Basis_X_all,
+                                                      n_rank = mod_hom_t$n_rank,
+                                                      n_rank_pars = mod_hom_t$n_rank_pars,
                                                       n_properties = n_prop,
                                                       a_mult = a_reps,
                                                       cor_fun_gp = cor_fun_test,
@@ -805,7 +837,8 @@ for(iter in 0:5){
                                                       cov_bp = sig_type,
                                                       rescale_y = mod_hom_t$rs_y,
                                                       rs_mean = mod_hom_t$rs_mean,
-                                                      rs_mult = mod_hom_t$rs_mult)
+                                                      rs_mult = mod_hom_t$rs_mult,
+                                                      eps = eps_global)
     
     
     pol<- list("Tension" = test_pred_obj_t,
@@ -850,7 +883,7 @@ for(iter in 0:5){
   
   save(np_id_h,
      file = here::here("Results","Fixed Data",
-                       "ALV2_26_prior_gam_np_h_gen_sig_pol_m52.RData"))
+                       "ALV2_26_9_prior_gam_np_h_low_rank_pol_m52.RData"))
   
 }
 

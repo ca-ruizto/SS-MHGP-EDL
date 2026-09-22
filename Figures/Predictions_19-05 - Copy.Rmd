@@ -831,9 +831,20 @@ dat_sim <- bind_rows(dat_ss_c_all%>%
 dat_comp <- dat_pm_hom%>%
             mutate(Test = ifelse(Test == "Tension-Hom", 
                                  "Tension", "Compression" ),
-                   Model = "Hom")%>%
+                   Model = "Hom",
+                   Sig = "Diag")%>%
             bind_rows(dat_pm%>%
-                        mutate(Model = "Het"))%>%
+                        mutate(Model = "Het",
+                               Sig = "Diag"),
+                      dat_pm_gen%>%
+                        mutate(Model = "Het",
+                               Sig = "Gen"),
+                      dat_pm_hom_gen%>%
+                          mutate(Test = ifelse(Test == "Tension-Hom", 
+                                               "Tension", "Compression" ),
+                                 Model = "Hom",
+                                 Sig = "Gen")
+                      )%>%
            pivot_longer(cols= all_of(props),
                values_to = "pred",
                names_to = "property")%>%
@@ -854,7 +865,7 @@ dat_comp%>%
          property = factor(property,
                            levels = props,
                            labels = prop_ltx))%>%
-  group_by(Model, Test, Step,property)%>%
+  group_by(Model, Sig, Test, Step,property)%>%
   summarise(rer= 100*mean(rer))%>%
   pivot_wider(names_from = "property",
               values_from = "rer")#%>%
@@ -871,19 +882,20 @@ dat_comp%>%
          property = factor(property,
                            levels = props,
                            labels = prop_ltx))%>%
-  group_by(Model, Test, Step,property)%>%
+  group_by(Model, Sig, Test, Step,property)%>%
   summarise(rer= 100*mean(rer))%>%
   pivot_wider(names_from = "property",
               values_from = "rer") #%>%
   #kableExtra::kbl("latex",booktabs = T,digits = 2)
 ```
 
-```{r mape_al, fig.height=4.5, fig.width=7}
+```{r mape_al, fig.height=4.5, fig.width=9}
 dat_comp%>%
   filter(elements > 2,
          ! alloy_cnt %in% id_rl,
-         Model == "Het")%>%
-  mutate(Type = factor(Type,
+         Model == "Het",
+         Test == "Compression")%>%
+  mutate(Test = factor(Test,
                        levels = c("Tension","Compression")),
          Kernel = factor(Kernel,
                          levels = kernels_v,
@@ -896,26 +908,26 @@ dat_comp%>%
          property = factor(property,
                            levels = props,
                            labels = prop_ltx))%>%
-  group_by(mean_type,Kernel, iter,Test,property)%>%
+  group_by(mean_type,Kernel, Sig, iter,Test,property)%>%
   summarise(rer= mean(rer))%>%
   ggplot(aes(x= iter,
              y= 100*rer,
              colour = Kernel,
-             linetype = mean_type))+
+             linetype = Sig))+
   geom_line(linewidth = 1.25)+
   # scale_color_brewer("Property",
   #                    labels = prop_ltx,
   #                    palette = "Dark2")+
   scale_color_brewer("Kernel", palette = "Dark2")+
-  ggh4x::facet_grid2(Test~property,
+  ggh4x::facet_grid2(mean_type~property,
              scales = "free",
              independent = "y",
              labeller = label_parsed)+
   #geom_hline(yintercept = 0, colour = "red",linetype = "dashed")+
   labs(y = "MAPE (%)",
        x = "Iteration",
-       linetype = "Mean",
-       title="Accuracy of MVGPR on General Composition Alloys")+
+       linetype = "Covariance",
+       title="Accuracy of MVGPR on General Composition Alloys (Compression)")+
   theme(legend.position = "bottom",
         axis.text.x = element_text(size = 12),
         legend.text = element_text(size=10),
@@ -924,12 +936,13 @@ dat_comp%>%
 ```
 
 
-```{r mape_al_hom, fig.height=4.5, fig.width=7}
+```{r mape_al_tension, fig.height=4.5, fig.width=9}
 dat_comp%>%
   filter(elements > 2,
          ! alloy_cnt %in% id_rl,
-         Model == "Hom")%>%
-  mutate(Type = factor(Type,
+         Model == "Het",
+         Test == "Tension")%>%
+  mutate(Test = factor(Test,
                        levels = c("Tension","Compression")),
          Kernel = factor(Kernel,
                          levels = kernels_v,
@@ -942,26 +955,26 @@ dat_comp%>%
          property = factor(property,
                            levels = props,
                            labels = prop_ltx))%>%
-  group_by(mean_type,Kernel, iter,Test,property)%>%
+  group_by(mean_type,Kernel, Sig, iter,Test,property)%>%
   summarise(rer= mean(rer))%>%
   ggplot(aes(x= iter,
              y= 100*rer,
              colour = Kernel,
-             linetype = mean_type))+
+             linetype = Sig))+
   geom_line(linewidth = 1.25)+
   # scale_color_brewer("Property",
   #                    labels = prop_ltx,
   #                    palette = "Dark2")+
   scale_color_brewer("Kernel", palette = "Dark2")+
-  facet_grid(Test~property,
+  ggh4x::facet_grid2(mean_type~property,
              scales = "free",
+             independent = "y",
              labeller = label_parsed)+
-  geom_hline(yintercept = 0, colour = "red",
-             linetype = "dashed")+
+  #geom_hline(yintercept = 0, colour = "red",linetype = "dashed")+
   labs(y = "MAPE (%)",
        x = "Iteration",
-       linetype = "Mean",
-       title="Accuracy of MVGPR on General Composition Alloys")+
+       linetype = "Covariance",
+       title="Accuracy of MVGPR on General Composition Alloys (Tension)")+
   theme(legend.position = "bottom",
         axis.text.x = element_text(size = 12),
         legend.text = element_text(size=10),
@@ -969,14 +982,113 @@ dat_comp%>%
     guides(colour = guide_legend(nrow = 1))
 ```
 
+
+```{r mape_al_hom, fig.height=4.5, fig.width=9}
+dat_comp%>%
+  filter(elements > 2,
+         ! alloy_cnt %in% id_rl,
+         Model == "Hom",
+         Test == "Compression")%>%
+  mutate(Test = factor(Test,
+                       levels = c("Tension","Compression")),
+         Kernel = factor(Kernel,
+                         levels = kernels_v,
+                         labels = c("M3/2", "M5/2")),
+         mean_type = factor(mean_type,
+                            levels = c("int","pol"),
+                            labels = c("Constant", "Linear")))%>%
+  filter(!(Test == "Compression" & property =="toughness"))%>%
+  mutate(rer = abs(pred-val)/val,
+         property = factor(property,
+                           levels = props,
+                           labels = prop_ltx))%>%
+  group_by(mean_type,Kernel, Sig, iter,Test,property)%>%
+  summarise(rer= mean(rer))%>%
+  ggplot(aes(x= iter,
+             y= 100*rer,
+             colour = Kernel,
+             linetype = Sig))+
+  geom_line(linewidth = 1.25)+
+  # scale_color_brewer("Property",
+  #                    labels = prop_ltx,
+  #                    palette = "Dark2")+
+  scale_color_brewer("Kernel", palette = "Dark2")+
+  facet_grid(mean_type~property,
+             scales = "free",
+             labeller = label_parsed)+
+  geom_hline(yintercept = 0, colour = "red",
+             linetype = "dashed")+
+  labs(y = "MAPE (%)",
+       x = "Iteration",
+       linetype = "Covariance",
+       title="Accuracy of MVGPR on General Composition Alloys (Compression)")+
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(size = 12),
+        legend.text = element_text(size=10),
+        legend.title = element_text(size =10))+ 
+    guides(colour = guide_legend(nrow = 1))
+```
+
+```{r mape_al_hom_ten, fig.height=4.5, fig.width=9}
+dat_comp%>%
+  filter(elements > 2,
+         ! alloy_cnt %in% id_rl,
+         Model == "Hom",
+         Test == "Tension")%>%
+  mutate(Test = factor(Test,
+                       levels = c("Tension","Compression")),
+         Kernel = factor(Kernel,
+                         levels = kernels_v,
+                         labels = c("M3/2", "M5/2")),
+         mean_type = factor(mean_type,
+                            levels = c("int","pol"),
+                            labels = c("Constant", "Linear")))%>%
+  filter(!(Test == "Compression" & property =="toughness"))%>%
+  mutate(rer = abs(pred-val)/val,
+         property = factor(property,
+                           levels = props,
+                           labels = prop_ltx))%>%
+  group_by(mean_type,Kernel, Sig, iter,Test,property)%>%
+  summarise(rer= mean(rer))%>%
+  ggplot(aes(x= iter,
+             y= 100*rer,
+             colour = Kernel,
+             linetype = Sig))+
+  geom_line(linewidth = 1.25)+
+  # scale_color_brewer("Property",
+  #                    labels = prop_ltx,
+  #                    palette = "Dark2")+
+  scale_color_brewer("Kernel", palette = "Dark2")+
+  facet_grid(mean_type~property,
+             scales = "free",
+             labeller = label_parsed)+
+  geom_hline(yintercept = 0, colour = "red",
+             linetype = "dashed")+
+  labs(y = "MAPE (%)",
+       x = "Iteration",
+       linetype = "Covariance",
+       title="Accuracy of MVGPR on General Composition Alloys (Compression)")+
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(size = 12),
+        legend.text = element_text(size=10),
+        legend.title = element_text(size =10))+ 
+    guides(colour = guide_legend(nrow = 1))
+```
+
+
+
 ## IMSPE
 
-
-
-```{r imspe_al, fig.height=4, fig.width=6}
-impse_dat%>%
-  bind_rows(impse_dat_hom)%>%
-  filter(impse < 1e4)%>%
+```{r}
+impse_dat_all <- impse_dat%>%
+  mutate(Sig = "Diag")%>%
+  bind_rows(impse_dat_hom%>%
+              mutate(Sig = "Diag"),
+            impse_dat_gen%>%
+              mutate(Sig = "Gen"),
+            impse_dat_hom%>%
+              mutate(Sig = "Gen"))%>%
+  #filter(impse < 1e4)%>%
   mutate(Model_Type = factor(Type,
                        levels  = c("Tension","Compression",
                                    "Tension-Hom","Compression-Hom"),
@@ -992,7 +1104,14 @@ impse_dat%>%
                          labels = c("M3/2", "M5/2")),
          mean_type = factor(mean_type,
                             levels = c("int","pol"),
-                            labels = c("Constant", "Linear")))%>%
+                            labels = c("Constant", "Linear")))
+```
+
+
+
+```{r imspe_al, fig.height=4, fig.width=6}
+impse_dat_all%>%
+  filter(Sig == "Diag")%>%
   ggplot(aes(x= iter,
              y= impse,
              colour = Model_Type,
@@ -1015,6 +1134,33 @@ impse_dat%>%
         legend.title = element_text(size =10))+ 
     guides(colour = guide_legend(nrow = 1))
 ```
+
+```{r imspe_al_gen, fig.height=4, fig.width=6}
+impse_dat_all%>%
+  filter(Sig == "Gen")%>%
+  ggplot(aes(x= iter,
+             y= impse,
+             colour = Model_Type,
+             linetype = Kernel))+
+  geom_line(linewidth = 1.25)+
+  # scale_color_brewer("Property",
+  #                    labels = prop_ltx,
+  #                    palette = "Dark2")+
+  scale_color_brewer("Error", palette = "Dark2")+
+  ggh4x::facet_grid2(Test_Type~mean_type,
+             scales = "free",
+             independent = "y")+
+  labs(y = "IMSPE",
+       x = "Iteration",
+       linetype = "Kernel",
+       title="IMSPE During the AL Algorithm")+
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(size = 12),
+        legend.text = element_text(size=10),
+        legend.title = element_text(size =10))+ 
+    guides(colour = guide_legend(nrow = 1))
+```
+
 
 ```{r imspe_al_sum, fig.height=4, fig.width=6}
 p1 <- impse_dat%>%

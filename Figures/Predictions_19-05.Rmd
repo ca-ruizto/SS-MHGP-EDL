@@ -72,10 +72,10 @@ properties <- c("log_max_strain",
 props <- c("ultimate_stress","ultimate_strain",
            "toughness","young_mod")
 
-prop_ltx <- unname(TeX(c("$\\sigma_u$","$\\epsilon_u$",
+prop_ltx <- unname(TeX(c("$\\sigma_u$","$\\epsilon_f$",
                          "$U_T$","$E$")))
 
-coefs_ltx <- unname(TeX(c("$\\ln(\\epsilon_u)$",
+coefs_ltx <- unname(TeX(c("$\\ln(\\epsilon_f)$",
                                   "$\\beta_1$","$\\beta_2$","$\\beta_3$",
                                "$\\beta_4$", "$\\beta_5$", "$\\beta_6$")))
 
