@@ -857,7 +857,7 @@ dat_comp <- dat_pm_hom%>%
 ```
 
 
-```{r mape_bin_comp, fig.height=8, fig.width=7}
+```{r acc_bin_comp, fig.height=8, fig.width=7}
 mod_names_nn <- c("int_m32",
                   "pol_m32",
                   "int_m52",
@@ -913,7 +913,7 @@ dat_comp%>%
         legend.title = element_text(size =10))
 ```
 
-```{r mape_bin_tension, fig.height=8, fig.width=7}
+```{r acc_bin_tension, fig.height=8, fig.width=7}
 mod_names_nn <- c("int_m32",
                   "pol_m32",
                   "int_m52",
@@ -969,7 +969,7 @@ dat_comp%>%
         legend.title = element_text(size =10))
 ```
 
-```{r mape_bin_hom_het_ten, fig.height=8, fig.width=7}
+```{r acc_bin_hom_het_ten, fig.height=8, fig.width=7}
 mod_names_nn <- c("int_m32",
                   "pol_m32",
                   "int_m52",
@@ -1025,7 +1025,7 @@ dat_comp%>%
         legend.title = element_text(size =10))
 ```
 
-```{r mape_bin_hom_het_comp, fig.height=8, fig.width=7}
+```{r acc_bin_hom_het_comp, fig.height=8, fig.width=7}
 mod_names_nn <- c("int_m32",
                   "pol_m32",
                   "int_m52",
