@@ -6,29 +6,7 @@ output:
 date: "2026-04-18"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      dev = "png",
-                      dpi =400)
 
-library(tidyverse)
-library(scales)
-library(ggnewscale)
-library(AlgDesign)
-theme_set(theme_bw()+
-            theme(text=element_text(size = 14),
-                  legend.box.margin = margin(-10,-10,-10,-10),
-                  legend.position = "none",
-                  legend.text = element_text(size=12)))
-library(mgcv)
-library(gridExtra)
-library(nloptr)
-library(latex2exp)
-library(collapse)
-library(lme4)
-library(Matrix)
-library(parallel)
-```
 
 ## TO DO
 
@@ -38,7 +16,8 @@ library(parallel)
 
 ### Functions
 
-```{r}
+
+``` r
 source(here::here("Functions",
                     "mv_imspe_funs.R"))
 
@@ -63,7 +42,8 @@ source(here::here("Functions",
 
 Column names and properties 
 
-```{r}
+
+``` r
 metals <- c("Mo","Nb","Ta","V","W")
 properties <- c("log_max_strain",
                 "bc_1","bc_2","bc_3",
@@ -82,12 +62,12 @@ coefs_ltx <- unname(TeX(c("$\\ln(\\epsilon_u)$",
 
 n_prop <- length(properties)
 n_dim <- length(metals) - 1
-
 ```
 
 Data to compute transformation bounds (ILR)
 
-```{r}
+
+``` r
 mixture_dat <- gen.mixture(11,5)
 
 eps_ilr <- 0.02
@@ -99,7 +79,8 @@ xx <- ilr_bounded_minmax_additive(as.matrix(mixture_dat),
 
 Initial data set
 
-```{r}
+
+``` r
 dat_ss_c <- rio::import(here::here("Results",
                                  "ss_all_ort_coefs_c_uns.csv"))
 
@@ -142,7 +123,8 @@ dat_ss_fil <- dat_ss_all%>%
 
 Quaternaries data
 
-```{r}
+
+``` r
 dat_ss_ter_c <- rio::import(here::here("Results",
                                  "ss_ter_ort_coefs_c_uns.csv"))
 
@@ -198,12 +180,12 @@ X_ter_B <- dat_ss_ter_c%>%
   slice_head(n=1)
 
 X_ter_B <- as.matrix(X_ter_B[,metals])
-
 ```
 
 ## Test Heterosedaskticity
 
-```{r}
+
+``` r
 gauss_test <- function(x){
   nortest::ad.test(x)$p.value
 }
@@ -218,7 +200,8 @@ bar_test <- function(x, g){
 ```
 
 
-```{r}
+
+``` r
 dat_ss_c_val_err <- dat_ss_c_all%>%
   mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))%>%
   filter(elements > 1)%>%
@@ -239,11 +222,30 @@ dat_ss_c_val_err%>%
   geom_qq_line()+
   facet_wrap(~property,
              scales = "free")
+```
 
+![](Predictions_19-05---Copy_files/figure-html/unnamed-chunk-7-1.png)<!-- -->
+
+``` r
 dat_ss_c_val_err%>%
   group_by(property)%>%
   summarise(p_val = gauss_test(val_err))
+```
 
+```
+## # A tibble: 7 × 2
+##   property          p_val
+##   <chr>             <dbl>
+## 1 bc_1           1.78e- 7
+## 2 bc_2           6.01e-11
+## 3 bc_3           3.7 e-24
+## 4 bc_4           3.7 e-24
+## 5 bc_5           3.7 e-24
+## 6 bc_6           3.7 e-24
+## 7 log_max_strain 5.80e- 9
+```
+
+``` r
 dat_ss_c_val_err%>%
   filter(elements < 3)%>%
   group_by(property, alloy)%>%
@@ -251,12 +253,35 @@ dat_ss_c_val_err%>%
             p_val_bt = bar_test(val_err,alloy_cnt))%>%
   mutate(ad_pass = p_val > 0.05,
          bt_pass = p_val_bt > 0.05)
-  
+```
+
+```
+## `summarise()` has grouped output by 'property'. You can override using the
+## `.groups` argument.
+```
+
+```
+## # A tibble: 70 × 6
+## # Groups:   property [7]
+##    property alloy   p_val   p_val_bt ad_pass bt_pass
+##    <chr>    <chr>   <dbl>      <dbl> <lgl>   <lgl>  
+##  1 bc_1     MoNb  0.0351  0.0136     FALSE   FALSE  
+##  2 bc_1     MoTa  0.425   0.00912    TRUE    FALSE  
+##  3 bc_1     MoV   0.170   0.0428     TRUE    FALSE  
+##  4 bc_1     MoW   0.0374  0.113      FALSE   TRUE   
+##  5 bc_1     NbTa  0.331   0.129      TRUE    TRUE   
+##  6 bc_1     NbV   0.870   0.714      TRUE    TRUE   
+##  7 bc_1     NbW   0.505   0.171      TRUE    TRUE   
+##  8 bc_1     TaV   0.0692  0.0238     TRUE    FALSE  
+##  9 bc_1     TaW   0.00567 0.00000500 FALSE   FALSE  
+## 10 bc_1     VW    0.410   0.135      TRUE    TRUE   
+## # ℹ 60 more rows
 ```
 
 
 
-```{r}
+
+``` r
 dat_ss_t_val_err <- dat_ss_t_all%>%
   mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))%>%
   filter(elements > 1)%>%
@@ -277,11 +302,30 @@ dat_ss_t_val_err%>%
   geom_qq_line()+
   facet_wrap(~property,
              scales = "free")
+```
 
+![](Predictions_19-05---Copy_files/figure-html/unnamed-chunk-8-1.png)<!-- -->
+
+``` r
 dat_ss_t_val_err%>%
   group_by(property)%>%
   summarise(p_val = gauss_test(val_err))
+```
 
+```
+## # A tibble: 7 × 2
+##   property          p_val
+##   <chr>             <dbl>
+## 1 bc_1           1.56e- 2
+## 2 bc_2           3.7 e-24
+## 3 bc_3           2.69e-14
+## 4 bc_4           3.7 e-24
+## 5 bc_5           3.7 e-24
+## 6 bc_6           3.7 e-24
+## 7 log_max_strain 1.68e-16
+```
+
+``` r
 dat_ss_t_val_err%>%
   filter(elements < 3)%>%
   group_by(property, alloy)%>%
@@ -289,12 +333,35 @@ dat_ss_t_val_err%>%
             p_val_bt = bar_test(val_err,alloy_cnt))%>%
   mutate(ad_pass = p_val > 0.05,
          bt_pass = p_val_bt > 0.05)
-  
+```
+
+```
+## `summarise()` has grouped output by 'property'. You can override using the
+## `.groups` argument.
+```
+
+```
+## # A tibble: 70 × 6
+## # Groups:   property [7]
+##    property alloy   p_val p_val_bt ad_pass bt_pass
+##    <chr>    <chr>   <dbl>    <dbl> <lgl>   <lgl>  
+##  1 bc_1     MoNb  0.550   0.723    TRUE    TRUE   
+##  2 bc_1     MoTa  0.373   0.192    TRUE    TRUE   
+##  3 bc_1     MoV   0.761   0.833    TRUE    TRUE   
+##  4 bc_1     MoW   0.156   0.00324  TRUE    FALSE  
+##  5 bc_1     NbTa  0.0494  0.000414 FALSE   FALSE  
+##  6 bc_1     NbV   0.988   0.420    TRUE    TRUE   
+##  7 bc_1     NbW   0.00720 0.912    FALSE   TRUE   
+##  8 bc_1     TaV   0.967   0.291    TRUE    TRUE   
+##  9 bc_1     TaW   0.445   0.00230  TRUE    FALSE  
+## 10 bc_1     VW    0.987   0.0830   TRUE    TRUE   
+## # ℹ 60 more rows
 ```
 
 
 
-```{r}
+
+``` r
 dat_ss_c_higher_val_err <- dat_ss_c_val_err %>%
   filter(elements > 2)
 
@@ -303,11 +370,30 @@ dat_ss_c_higher_val_err %>%
   geom_qq() +
   geom_qq_line() +
   facet_wrap(~property, scales = "free")
+```
 
+![](Predictions_19-05---Copy_files/figure-html/unnamed-chunk-9-1.png)<!-- -->
+
+``` r
 dat_ss_c_higher_val_err %>%
   group_by(property) %>%
   summarise(p_val = gauss_test(val_err))
+```
 
+```
+## # A tibble: 7 × 2
+##   property          p_val
+##   <chr>             <dbl>
+## 1 bc_1           4.51e- 2
+## 2 bc_2           6.94e- 2
+## 3 bc_3           5.34e- 4
+## 4 bc_4           1.51e-18
+## 5 bc_5           3.7 e-24
+## 6 bc_6           3.7 e-24
+## 7 log_max_strain 2.24e- 1
+```
+
+``` r
 dat_ss_c_higher_val_err %>%
   group_by(property, elements) %>%
   summarise(
@@ -320,8 +406,35 @@ dat_ss_c_higher_val_err %>%
   )
 ```
 
+```
+## `summarise()` has grouped output by 'property'. You can override using the
+## `.groups` argument.
+```
 
-```{r}
+```
+## # A tibble: 14 × 6
+## # Groups:   property [7]
+##    property       elements    p_val p_val_bt ad_pass bt_pass
+##    <chr>             <int>    <dbl>    <dbl> <lgl>   <lgl>  
+##  1 bc_1                  4 7.82e- 1 2.72e- 1 TRUE    TRUE   
+##  2 bc_1                  5 8.72e- 2 1.15e- 1 TRUE    TRUE   
+##  3 bc_2                  4 6.56e- 1 3.17e- 1 TRUE    TRUE   
+##  4 bc_2                  5 7.88e- 2 9.08e- 2 TRUE    TRUE   
+##  5 bc_3                  4 2.86e- 1 5.79e- 2 TRUE    TRUE   
+##  6 bc_3                  5 3.94e- 3 1.55e- 2 FALSE   FALSE  
+##  7 bc_4                  4 7.60e- 4 2.11e- 3 FALSE   FALSE  
+##  8 bc_4                  5 9.11e-15 3.03e- 9 FALSE   FALSE  
+##  9 bc_5                  4 2.22e- 5 5.28e- 4 FALSE   FALSE  
+## 10 bc_5                  5 3.7 e-24 9.87e-18 FALSE   FALSE  
+## 11 bc_6                  4 3.29e- 6 2.12e- 6 FALSE   FALSE  
+## 12 bc_6                  5 3.7 e-24 4.72e-17 FALSE   FALSE  
+## 13 log_max_strain        4 9.04e- 1 4.80e- 1 TRUE    TRUE   
+## 14 log_max_strain        5 2.03e- 1 1.41e- 1 TRUE    TRUE
+```
+
+
+
+``` r
 dat_ss_t_higher_val_err <- dat_ss_t_val_err %>%
   filter(elements > 2)
 
@@ -330,11 +443,30 @@ dat_ss_t_higher_val_err %>%
   geom_qq() +
   geom_qq_line() +
   facet_wrap(~property, scales = "free")
+```
 
+![](Predictions_19-05---Copy_files/figure-html/unnamed-chunk-10-1.png)<!-- -->
+
+``` r
 dat_ss_t_higher_val_err %>%
   group_by(property) %>%
   summarise(p_val = gauss_test(val_err))
+```
 
+```
+## # A tibble: 7 × 2
+##   property          p_val
+##   <chr>             <dbl>
+## 1 bc_1           2.02e- 1
+## 2 bc_2           2.83e-19
+## 3 bc_3           2.25e- 2
+## 4 bc_4           2.36e-14
+## 5 bc_5           1.36e-22
+## 6 bc_6           3.57e-12
+## 7 log_max_strain 1.29e-12
+```
+
+``` r
 dat_ss_t_higher_val_err %>%
   group_by(property, elements) %>%
   summarise(
@@ -347,11 +479,38 @@ dat_ss_t_higher_val_err %>%
   )
 ```
 
+```
+## `summarise()` has grouped output by 'property'. You can override using the
+## `.groups` argument.
+```
+
+```
+## # A tibble: 14 × 6
+## # Groups:   property [7]
+##    property       elements    p_val p_val_bt ad_pass bt_pass
+##    <chr>             <int>    <dbl>    <dbl> <lgl>   <lgl>  
+##  1 bc_1                  4 7.63e- 1 8.48e- 1 TRUE    TRUE   
+##  2 bc_1                  5 1.00e- 1 1.12e- 3 TRUE    FALSE  
+##  3 bc_2                  4 8.73e- 1 6.94e- 1 TRUE    TRUE   
+##  4 bc_2                  5 1.16e-15 1.85e-12 FALSE   FALSE  
+##  5 bc_3                  4 6.80e- 1 2.55e- 1 TRUE    TRUE   
+##  6 bc_3                  5 2.74e- 2 4.11e- 3 FALSE   FALSE  
+##  7 bc_4                  4 8.93e- 1 2.62e- 1 TRUE    TRUE   
+##  8 bc_4                  5 1.40e-11 4.75e-10 FALSE   FALSE  
+##  9 bc_5                  4 2.18e- 1 6.81e- 2 TRUE    TRUE   
+## 10 bc_5                  5 5.25e-16 1.30e-10 FALSE   FALSE  
+## 11 bc_6                  4 2.79e- 2 1.61e- 2 FALSE   FALSE  
+## 12 bc_6                  5 1.17e- 9 1.35e- 8 FALSE   FALSE  
+## 13 log_max_strain        4 9.45e- 1 7.80e- 1 TRUE    TRUE   
+## 14 log_max_strain        5 6.51e-12 9.52e-61 FALSE   FALSE
+```
+
 
 
 ##fitted nugget  
 
-```{r}
+
+``` r
 load(here::here("Results", "Predictions_het.RData"))
 load(here::here("Results", "Predictions_hom.RData"))
 
@@ -419,12 +578,12 @@ dat_compare <- dat_observed %>%
         sum_sq * (1 / nugget_het - 1 / nugget_hom)
     )
   )
-
 ```
 
 
 
-```{r}
+
+``` r
 lambda_results <- dat_compare %>%
   group_by(Test, property) %>%
   summarise(
@@ -441,10 +600,56 @@ lambda_results <- dat_compare %>%
 lambda_results %>%
   filter(Test == "Compression") %>%
   print(n = Inf, width = Inf)
+```
 
+```
+## # A tibble: 7 × 6
+##   Test        property       compositions nugget_max_min
+##   <chr>       <chr>                 <int>          <dbl>
+## 1 Compression bc_1                     40           1.00
+## 2 Compression bc_2                     40           1.00
+## 3 Compression bc_3                     40          19.9 
+## 4 Compression bc_4                     40           7.53
+## 5 Compression bc_5                     40           1.00
+## 6 Compression bc_6                     40           1.00
+## 7 Compression log_max_strain           40           1.00
+##   score_gain_vs_fitted_hom shape_gain_vs_best_constant
+##                      <dbl>                       <dbl>
+## 1                   0.0813                   -0.00402 
+## 2                   0.0763                    0.00181 
+## 3                  15.3                       6.01    
+## 4                   1.95                     -1.23    
+## 5                   0.309                    -0.000755
+## 6                  -2.71                     -0.00293 
+## 7                 195.                        0.00229
+```
+
+``` r
 lambda_results %>%
   filter(Test == "Tension") %>%
   print(n = Inf, width = Inf)
+```
+
+```
+## # A tibble: 7 × 6
+##   Test    property       compositions nugget_max_min score_gain_vs_fitted_hom
+##   <chr>   <chr>                 <int>          <dbl>                    <dbl>
+## 1 Tension bc_1                     40           1.00                 -0.569  
+## 2 Tension bc_2                     40           1.00                  0.00457
+## 3 Tension bc_3                     40           1.00                235.     
+## 4 Tension bc_4                     40           1.00                 20.1    
+## 5 Tension bc_5                     40           1.00                -21.6    
+## 6 Tension bc_6                     40          14.4                  17.4    
+## 7 Tension log_max_strain           40         575.                  238.     
+##   shape_gain_vs_best_constant
+##                         <dbl>
+## 1                 -0.00419   
+## 2                 -0.0000336 
+## 3                  0.000144  
+## 4                 -0.00126   
+## 5                  0.00000157
+## 6                 12.4       
+## 7                -16.1
 ```
 
 
@@ -459,7 +664,8 @@ lambda_results %>%
 
 Training set
 
-```{r}
+
+``` r
 temp <- dat_ss_fil%>%
   ungroup()%>%
   filter(elements == 2,
@@ -512,12 +718,12 @@ dat_train_c <- dat_train%>%
     
 dat_train_t <- dat_train%>%
       filter(type == "t")
-
 ```
 
 Candidates for active learning
 
-```{r}
+
+``` r
 dat_cand <- dat_ss_fil_all%>%
   filter(elements > 2,
          rep > 1)
@@ -535,7 +741,8 @@ dat_rep_1 <- dat_ss_fil_all%>%
          rep < 2)
 ```
 
-```{r}
+
+``` r
 X_ini <- as.matrix(dat_ss_train[,metals])
 X_ini_B <- as.matrix(dat_train_B[,metals])
 
@@ -553,7 +760,6 @@ dat_ss_t_cand <- dat_ss_t_cand%>%
                   pivot_longer(cols = all_of(properties),
                                names_to = "property",
                                values_to = "val_true")
-
 ```
 
 
@@ -561,12 +767,14 @@ dat_ss_t_cand <- dat_ss_t_cand%>%
 
 ### Predict Models
 
-```{r}
+
+``` r
 kernels_v <- c("m32", "m52")
 mean_type <- c("pol", "int")
 ```
 
-```{r}
+
+``` r
 np_id_h_all <- numeric(0)
 for(mt in mean_type){
   for(kt in kernels_v){
@@ -585,7 +793,13 @@ for(mt in mean_type){
 }
 np_id_h_all <- sort(unique(np_id_h_all))
 length(np_id_h_all)
+```
 
+```
+## [1] 11
+```
+
+``` r
 for(mt in mean_type){
   for(kt in kernels_v){
     fn <- paste0("ALV2_26_prior_gam_np_h_gen_sig_", mt, "_", kt, ".RData")
@@ -604,7 +818,13 @@ for(mt in mean_type){
 
 np_id_h_all <- sort(unique(np_id_h_all))
 length(np_id_h_all)
+```
 
+```
+## [1] 18
+```
+
+``` r
 id_rl <- dat_cand$alloy_cnt[np_id_h_all]
 
 dat_pred <- rbind(dat_cand,
@@ -628,7 +848,8 @@ Basis_X_pred <- create_poly_basis(X_pred,
 ```
 
 
-```{r}
+
+``` r
 st <- Sys.time()
 fn <- here::here("Results",
                  "Predictions_het.RData")
@@ -736,7 +957,8 @@ print(ft - st)
 }
 ```
 
-```{r}
+
+``` r
 st <- Sys.time()
 
 fn <- here::here("Results",
@@ -847,7 +1069,12 @@ ft <- Sys.time()
 print(ft - st)
 ```
 
-```{r}
+```
+## Time difference of 0.02070212 secs
+```
+
+
+``` r
 st <- Sys.time()
 fn <- here::here("Results",
                  "Predictions_lr_het.RData")
@@ -955,7 +1182,12 @@ ft <- Sys.time()
 print(ft - st)
 ```
 
-```{r}
+```
+## Time difference of 0.02436399 secs
+```
+
+
+``` r
 st <- Sys.time()
 
 dat_mu_hom_gen <- dat_lb_hom_gen <- dat_ub_hom_gen <- dat_var_hom_gen <-
@@ -1068,7 +1300,8 @@ save(dat_mu_hom_gen,
 
 ### Comparison MAPE
 
-```{r}
+
+``` r
 dat_sim <- bind_rows(dat_ss_c_all%>%
                            mutate(Test = "Compression"),
                          dat_ss_t_all%>%
@@ -1082,7 +1315,8 @@ dat_sim <- bind_rows(dat_ss_c_all%>%
 ```
 
 
-```{r}
+
+``` r
 dat_comp <- dat_pm_hom%>%
             mutate(Test = ifelse(Test == "Tension-Hom", 
                                  "Tension", "Compression" ),
@@ -1111,8 +1345,14 @@ dat_comp <- dat_pm_hom%>%
   mutate(elements= (Mo>0) + (Nb>0) + (Ta>0) + (V>0) + (W>0))
 ```
 
+```
+## `summarise()` has grouped output by 'alloy_cnt', 'Test'. You can override using
+## the `.groups` argument.
+```
 
-```{r acc_bin_comp, fig.height=8, fig.width=7}
+
+
+``` r
 mod_names_nn <- c("int_m32",
                   "pol_m32",
                   "int_m52",
@@ -1168,7 +1408,10 @@ dat_comp%>%
         legend.title = element_text(size =10))
 ```
 
-```{r acc_bin_tension, fig.height=8, fig.width=7}
+![](Predictions_19-05---Copy_files/figure-html/acc_bin_comp-1.png)<!-- -->
+
+
+``` r
 mod_names_nn <- c("int_m32",
                   "pol_m32",
                   "int_m52",
@@ -1224,7 +1467,10 @@ dat_comp%>%
         legend.title = element_text(size =10))
 ```
 
-```{r acc_bin_hom_het_ten, fig.height=8, fig.width=7}
+![](Predictions_19-05---Copy_files/figure-html/acc_bin_tension-1.png)<!-- -->
+
+
+``` r
 mod_names_nn <- c("int_m32",
                   "pol_m32",
                   "int_m52",
@@ -1280,7 +1526,10 @@ dat_comp%>%
         legend.title = element_text(size =10))
 ```
 
-```{r acc_bin_hom_het_comp, fig.height=8, fig.width=7}
+![](Predictions_19-05---Copy_files/figure-html/acc_bin_hom_het_ten-1.png)<!-- -->
+
+
+``` r
 mod_names_nn <- c("int_m32",
                   "pol_m32",
                   "int_m52",
@@ -1336,9 +1585,12 @@ dat_comp%>%
         legend.title = element_text(size =10))
 ```
 
+![](Predictions_19-05---Copy_files/figure-html/acc_bin_hom_het_comp-1.png)<!-- -->
 
 
-```{r mape_al_tension, fig.height=4.5, fig.width=9}
+
+
+``` r
 dat_comp%>%
   filter(elements > 2,
          ! alloy_cnt %in% id_rl,
@@ -1384,8 +1636,16 @@ dat_comp%>%
     guides(colour = guide_legend(nrow = 1))
 ```
 
+```
+## `summarise()` has grouped output by 'mean_type', 'Kernel', 'Sig', 'iter',
+## 'Test'. You can override using the `.groups` argument.
+```
 
-```{r mape_al_hom, fig.height=4.5, fig.width=9}
+![](Predictions_19-05---Copy_files/figure-html/mape_al_tension-1.png)<!-- -->
+
+
+
+``` r
 dat_comp%>%
   filter(elements > 2,
          ! alloy_cnt %in% id_rl,
@@ -1431,7 +1691,15 @@ dat_comp%>%
     guides(colour = guide_legend(nrow = 1))
 ```
 
-```{r mape_al_hom_ten, fig.height=4.5, fig.width=9}
+```
+## `summarise()` has grouped output by 'mean_type', 'Kernel', 'Sig', 'iter',
+## 'Test'. You can override using the `.groups` argument.
+```
+
+![](Predictions_19-05---Copy_files/figure-html/mape_al_hom-1.png)<!-- -->
+
+
+``` r
 dat_comp%>%
   filter(elements > 2,
          ! alloy_cnt %in% id_rl,
@@ -1477,11 +1745,19 @@ dat_comp%>%
     guides(colour = guide_legend(nrow = 1))
 ```
 
+```
+## `summarise()` has grouped output by 'mean_type', 'Kernel', 'Sig', 'iter',
+## 'Test'. You can override using the `.groups` argument.
+```
+
+![](Predictions_19-05---Copy_files/figure-html/mape_al_hom_ten-1.png)<!-- -->
+
 
 
 ## IMSPE
 
-```{r}
+
+``` r
 impse_dat_all <- impse_dat%>%
   mutate(Sig = "Diag")%>%
   bind_rows(impse_dat_hom%>%
@@ -1511,7 +1787,8 @@ impse_dat_all <- impse_dat%>%
 
 
 
-```{r imspe_al, fig.height=4, fig.width=6}
+
+``` r
 impse_dat_all%>%
   filter(Sig == "Diag")%>%
   ggplot(aes(x= iter,
@@ -1537,7 +1814,10 @@ impse_dat_all%>%
     guides(colour = guide_legend(nrow = 1))
 ```
 
-```{r imspe_al_gen, fig.height=4, fig.width=6}
+![](Predictions_19-05---Copy_files/figure-html/imspe_al-1.png)<!-- -->
+
+
+``` r
 impse_dat_all%>%
   filter(Sig == "Gen")%>%
   ggplot(aes(x= iter,
@@ -1563,8 +1843,11 @@ impse_dat_all%>%
     guides(colour = guide_legend(nrow = 1))
 ```
 
+![](Predictions_19-05---Copy_files/figure-html/imspe_al_gen-1.png)<!-- -->
 
-```{r imspe_al_sum, fig.height=4, fig.width=6}
+
+
+``` r
 p1 <- impse_dat%>%
   bind_rows(impse_dat_hom)%>%
   mutate(Model_Type = factor(Type,
@@ -1605,9 +1888,18 @@ p1 <- impse_dat%>%
         legend.text = element_text(size=10),
         legend.title = element_text(size =10))+ 
     guides(colour = guide_legend(nrow = 1))
+```
 
+```
+## `summarise()` has grouped output by 'Model_Type', 'Kernel', 'mean_type'. You
+## can override using the `.groups` argument.
+```
+
+``` r
 p1 
 ```
+
+![](Predictions_19-05---Copy_files/figure-html/imspe_al_sum-1.png)<!-- -->
 
 
 
@@ -1616,7 +1908,8 @@ p1
 
 
 
-```{r}
+
+``` r
 nn_bin_t <- read.csv(here::here("Results", "NN_Experts",
                                  "dat_test_bin_even_t_predictions.csv"))
 nn_bin_c <- read.csv(here::here("Results", "NN_Experts",
@@ -1655,12 +1948,11 @@ gp_var_nn_c<- bind_rows(nn_bin_c[,c(alloy_cnt_col,var_ids)],
               arrange(alloy_cnt)
 gp_var_nn_c <- exp(as.matrix(gp_var_nn_c[,-1]))  %r*%
                     out_nn_c$rs_mult^2
-
 ```
 
 
-```{r}
 
+``` r
 res_nn_t <- predict_mod_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt")],
                                             gp_mu = gp_mu_nn_t,
                                            gp_var = gp_var_nn_t,
@@ -1686,7 +1978,8 @@ res_nn_c <- predict_mod_gp_sampling_fun(Xdesign = dat_pred[,c(metals,"alloy_cnt"
 
 
 
-```{r}
+
+``` r
 dl_name <- "CL-REMoE"
 
 dat_comp_nn <- bind_rows(res_nn_c$mp_mean ,
@@ -1705,12 +1998,20 @@ dat_comp_nn <- bind_rows(res_nn_c$mp_mean ,
                          group_by(alloy_cnt,Test,property)%>%
                          summarise(val = mean(val)),
                        by = join_by(alloy_cnt,Test,property))
+```
 
+```
+## `summarise()` has grouped output by 'alloy_cnt', 'Test'. You can override using
+## the `.groups` argument.
+```
+
+``` r
 dat_comp_nn <- dat_comp_nn %>%
                 bind_rows(dat_comp)
 ```
 
-```{r acc_bin_mods_nn, fig.height=4.5, fig.width=7}
+
+``` r
 prop_ltx <- unname(TeX(c("$\\sigma_u$","$\\epsilon_f$",
                          "$U_T$","$E$")))
 mod_names_nn <- c("int_m32",
@@ -1756,8 +2057,10 @@ p1 <- dat_comp_nn%>%
 p1
 ```
 
-```{r acc_qq_mods_nn, fig.height=4.5, fig.width=7}
+![](Predictions_19-05---Copy_files/figure-html/acc_bin_mods_nn-1.png)<!-- -->
 
+
+``` r
 p1 <- dat_comp_nn%>%
   filter(Step %in% mod_names_nn,
          Model %in% c("Het", dl_name),
@@ -1790,8 +2093,11 @@ p1 <- dat_comp_nn%>%
 p1
 ```
 
+![](Predictions_19-05---Copy_files/figure-html/acc_qq_mods_nn-1.png)<!-- -->
 
-```{r}
+
+
+``` r
 dat_comp_nn%>%
   filter(Step %in% mod_names_nn,
          Model %in% c("Het", dl_name),
@@ -1813,8 +2119,33 @@ dat_comp_nn%>%
   kableExtra::kbl("latex",booktabs = T,digits = 2)
 ```
 
+```
+## `summarise()` has grouped output by 'Model', 'Test', 'Step'. You can override
+## using the `.groups` argument.
+```
 
-```{r}
+
+\begin{tabular}[t]{lllrrrr}
+\toprule
+Model & Test & Step & sigma[u] & epsilon[f] & U[T] & E\\
+\midrule
+CL-REMoE & Compression & CL-REMoE & 5.33 & 6.60 & 10.99 & 8.77\\
+Het & Compression & M3/2 & 18.74 & 14.29 & 30.87 & 13.71\\
+Het & Compression & Lin M3/2 & 13.96 & 12.86 & 26.59 & 9.93\\
+Het & Compression & M5/2 & 22.11 & 27.60 & 50.51 & 12.48\\
+Het & Compression & Lin M5/2 & 18.85 & 20.27 & 39.47 & 10.70\\
+\addlinespace
+CL-REMoE & Tension & CL-REMoE & 6.51 & 9.09 & 8.76 & 8.47\\
+Het & Tension & M3/2 & 12.49 & 17.35 & 16.71 & 15.87\\
+Het & Tension & Lin M3/2 & 23.77 & 13.67 & 24.81 & 17.32\\
+Het & Tension & M5/2 & 16.52 & 22.51 & 31.08 & 15.71\\
+Het & Tension & Lin M5/2 & 19.18 & 15.90 & 27.85 & 37.63\\
+\bottomrule
+\end{tabular}
+
+
+
+``` r
 dat_comp_nn%>%
   filter(Step %in% mod_names_nn,
          Model %in% c("Het", dl_name),
@@ -1835,12 +2166,37 @@ dat_comp_nn%>%
   kableExtra::kbl("latex",booktabs = T,digits = 2)
 ```
 
+```
+## `summarise()` has grouped output by 'Model', 'Test', 'Step'. You can override
+## using the `.groups` argument.
+```
+
+
+\begin{tabular}[t]{lllrrrr}
+\toprule
+Model & Test & Step & sigma[u] & epsilon[f] & U[T] & E\\
+\midrule
+CL-REMoE & Compression & CL-REMoE & 4.33 & 4.22 & 6.88 & 5.55\\
+Het & Compression & M3/2 & 1.22 & 6.79 & 7.46 & 6.73\\
+Het & Compression & Lin M3/2 & 1.48 & 1.09 & 2.18 & 1.41\\
+Het & Compression & M5/2 & 8.37 & 4.51 & 16.76 & 4.65\\
+Het & Compression & Lin M5/2 & 1.11 & 2.73 & 3.14 & 2.80\\
+\addlinespace
+CL-REMoE & Tension & CL-REMoE & 2.68 & 2.98 & 3.96 & 3.35\\
+Het & Tension & M3/2 & 8.82 & 1.19 & 9.39 & 7.41\\
+Het & Tension & Lin M3/2 & 1.85 & 1.27 & 2.37 & 1.86\\
+Het & Tension & M5/2 & 1.43 & 1.32 & 2.75 & 1.50\\
+Het & Tension & Lin M5/2 & 1.92 & 5.62 & 6.08 & 6.17\\
+\bottomrule
+\end{tabular}
+
 
 ## Binary Plots
 
 ### MoNb
 
-```{r}
+
+``` r
 in_pr <- c(0.2,0.4,0.6,0.8)
 alloys_in <- c("Nb","Mo", "MoNb")
 dat_sb <- dat_ss_t%>%
@@ -1877,8 +2233,8 @@ steps_in <- c(1,6)
 n_files <- length(steps_in)
 ```
 
-```{r}
 
+``` r
 dat_mu <- dat_lb <- dat_ub <- dat_var <- dat_nug <- dat_pm <- vector(mode = "list", length = n_files)
 imspe_v <- rep(0,n_files)
 for(i in steps_in){
@@ -1913,11 +2269,10 @@ dat_nug <- bind_rows(dat_nug)
 dat_pm <- bind_rows(dat_pm)
 dat_lb <- bind_rows(dat_lb)
 dat_ub <- bind_rows(dat_ub)
-
 ```
 
-```{r pred_prop_monb, fig.width=10, fig.height=3.5}
 
+``` r
 dat_lb2 <- dat_lb%>%
   pivot_longer(all_of(props),
                values_to = "val",
@@ -1977,8 +2332,10 @@ dat_pm2%>%
   theme(legend.position = "bottom")
 ```
 
-```{r pred_prop_monb_small, fig.width=5, fig.height=3}
+![](Predictions_19-05---Copy_files/figure-html/pred_prop_monb-1.png)<!-- -->
 
+
+``` r
 dat_pm2%>%
   filter(property %in% c("epsilon[f]", "U[T]"),
          Step == 0)%>%
@@ -2003,10 +2360,13 @@ dat_pm2%>%
   theme(legend.position = "none")
 ```
 
+![](Predictions_19-05---Copy_files/figure-html/pred_prop_monb_small-1.png)<!-- -->
+
 
 ### VW Binary
 
-```{r}
+
+``` r
 in_pr <- c(0.2,0.4,0.6,0.8)
 alloys_in <- c("V","W", "VW")
 
@@ -2022,12 +2382,12 @@ X_vw <- X_vw%>%
   unite("alloy_id",
         Mo:W,
         remove = FALSE)
-
 ```
 
 ### VW
 
-```{r}
+
+``` r
 in_pr <- c(0.2,0.4,0.6,0.8)
 alloys_in <- c("V","W", "VW")
 
@@ -2066,8 +2426,8 @@ steps_in <- c(1,6)
 n_files <- length(steps_in)
 ```
 
-```{r}
 
+``` r
 dat_mu <- dat_lb <- dat_ub <- dat_var <- dat_nug <- dat_pm <- vector(mode = "list", length = n_files)
 imspe_v <- rep(0,n_files)
 for(i in steps_in){
@@ -2102,11 +2462,10 @@ dat_nug <- bind_rows(dat_nug)
 dat_pm <- bind_rows(dat_pm)
 dat_lb <- bind_rows(dat_lb)
 dat_ub <- bind_rows(dat_ub)
-
 ```
 
-```{r pred_prop_vw, fig.width=10, fig.height=3.5}
 
+``` r
 dat_lb2 <- dat_lb%>%
   pivot_longer(all_of(props),
                values_to = "val",
@@ -2166,9 +2525,11 @@ dat_pm2%>%
   theme(legend.position = "bottom")
 ```
 
+![](Predictions_19-05---Copy_files/figure-html/pred_prop_vw-1.png)<!-- -->
 
-```{r pred_prop_vw_small, fig.width=5, fig.height=3}
 
+
+``` r
 dat_pm2%>%
   filter(property %in% c("epsilon[f]", "U[T]"),
          Step == 0)%>%
@@ -2194,10 +2555,13 @@ dat_pm2%>%
                   legend.text = element_text(size=10))
 ```
 
+![](Predictions_19-05---Copy_files/figure-html/pred_prop_vw_small-1.png)<!-- -->
+
 
 ### Beta
 
-```{r}
+
+``` r
 X_vw <- X_vw%>%
   mutate(id = row_number())
 
@@ -2239,12 +2603,11 @@ dat_sb_3_t <- dat_ss_all%>%
         mutate(property = factor(property,
                                  levels = properties,
                                  labels = coefs_ltx))
-            
 ```
 
 
-```{r}
 
+``` r
 dat_mu <- dat_mu_c <- vector(mode = "list", length = 2)
 for(i in steps_in){
   fn <- paste0("train_bin_rl_prior_gam_pol_m52_2026_05_19_RLV2_iter_",i-1,".RData")
@@ -2312,7 +2675,8 @@ pred_ms_c <- bind_rows(dat_mu_c)%>%
 
 
 
-```{r pred_beta_v2, fig.width=14, fig.height=5}
+
+``` r
 qz <- qnorm(0.05/2)
 
 pc <- pred_ms_c%>%
@@ -2380,10 +2744,12 @@ pt <- pred_ms_t%>%
                   legend.text = element_text(size=10))
 
 gridExtra::grid.arrange(pc,pt,ncol = 1)
-
 ```
 
-```{r pred_beta_small, fig.width=5, fig.height=3}
+![](Predictions_19-05---Copy_files/figure-html/pred_beta_v2-1.png)<!-- -->
+
+
+``` r
 qz <- qnorm(0.05/2)
 props_in <- c("ln(epsilon[f])", "beta[1]")
 pc <- pred_ms_c%>%
@@ -2413,8 +2779,9 @@ pc <- pred_ms_c%>%
                   legend.box.margin = margin(-10,-10,-10,-10),
                   legend.text = element_text(size=10))
 pc
-
 ```
+
+![](Predictions_19-05---Copy_files/figure-html/pred_beta_small-1.png)<!-- -->
 
 
 
@@ -2422,7 +2789,8 @@ pc
 
 ### Plot SS
 
-```{r}
+
+``` r
 load(file = here::here("ss_data_all.RData"))
 
 ss_dat_all <- ss_dat_all%>%
@@ -2435,8 +2803,8 @@ ss_dat_all <- ss_dat_all%>%
 ```
 
 
-```{r}
 
+``` r
 alloys_in <- c("V","W", "VW")
 dat_sb <- ss_dat_all%>%
   mutate(W = round(W,1))%>%
@@ -2456,11 +2824,10 @@ gp_mu <- gp_mu%>%
 var_gp <- results$gp_var
 var_gp <- var_gp%>%
   filter(id %in% ids_in$id)
-
-
 ```
 
-```{r}
+
+``` r
 test <- predict_ss_curve_sampling_fun(mu_gp =
                                         as.matrix(gp_mu[,1:5]),
                              var_gp = as.matrix(var_gp[,1:5]),
@@ -2472,9 +2839,16 @@ test <- predict_ss_curve_sampling_fun(mu_gp =
 gc()
 ```
 
+```
+##            used  (Mb) gc trigger   (Mb)  max used   (Mb)
+## Ncells  3247051 173.5    6060757  323.7   6060757  323.7
+## Vcells 19702618 150.4  197653732 1508.0 247051233 1884.9
+```
 
 
-```{r}
+
+
+``` r
 dat_ss_ci <- tibble(strain = rep(test$strain, ncol(test$mean)),
                     V = rep(ids_in$V, each = nrow(test$mean)),
                     W = rep(ids_in$W, each = nrow(test$mean)),
@@ -2491,7 +2865,8 @@ dat_h <- tibble(W = ids_in$W,
 
 
 
-```{r ss_ci, fig.width=6, fig.height=2.5}
+
+``` r
 dat_ss_ci%>%
   ggplot(aes(x = strain))+
   geom_ribbon(aes(ymax = ub,
@@ -2519,6 +2894,13 @@ dat_ss_ci%>%
        title = "Predicted SS Curve for VW Binary Alloys under Tension")+
   theme_bw()
 ```
+
+```
+## Warning: Removed 37 rows containing missing values or values outside the scale range
+## (`geom_ribbon()`).
+```
+
+![](Predictions_19-05---Copy_files/figure-html/ss_ci-1.png)<!-- -->
 
 
 
