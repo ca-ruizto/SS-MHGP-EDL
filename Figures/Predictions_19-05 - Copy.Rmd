@@ -208,11 +208,12 @@ gauss_test <- function(x){
   nortest::ad.test(x)$p.value
 }
 
-anova_test <- function(x, g){
+bar_test <- function(x, g){
   g <- factor(g)
-  lm_mod <- lm(x ~ g)
-  a <- anova(lm_mod)
-  tt$`Pr(>F)`[1]
+  df = data.frame(x = x,
+                  g = g)
+ res <- bartlett.test(x ~ g,data = df)
+ res$p.value
 }
 ```
 
@@ -241,14 +242,15 @@ dat_ss_c_val_err%>%
 
 dat_ss_c_val_err%>%
   group_by(property)%>%
-  summarise(p_val = gauss_test(val_err),
-            p_val_anova = anova_)
+  summarise(p_val = gauss_test(val_err))
 
 dat_ss_c_val_err%>%
   filter(elements < 3)%>%
   group_by(property, alloy)%>%
-  summarise(p_val = gauss_test(val_err))%>%
-  mutate(gaus_constant_var = p_val > 0.05)
+  summarise(p_val = gauss_test(val_err),
+            p_val_bt = bar_test(val_err,alloy_cnt))%>%
+  mutate(ad_pass = p_val > 0.05,
+         bt_pass = p_val_bt > 0.05)
   
 ```
 
