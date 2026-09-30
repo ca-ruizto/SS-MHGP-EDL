@@ -1321,7 +1321,8 @@ construct_pred_obj_fun <- function(pars,X,
 }
 
 predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
-                                  pred_obj, lambda_only = F, sd2_only = F){
+                                  pred_obj, lambda_only = F, sd2_only = F,
+                                  sd_single_loc = F){
   
   if(is.null(dim(newX))) newX <- matrix(newX, nrow=1)
   
@@ -1337,11 +1338,18 @@ predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
   kx <- pred_obj$cor_fun_gp(D_mat = dX,
                             theta = pred_obj$theta)
   kx <- kronecker(kx, pred_obj$Sig)
+  #diagonal multiple locs
   
-  sd2 <- rep(diag(pred_obj$Sig),n_locs) - diag(kx %*% tcrossprod(pred_obj$Ki, kx))
+  
+  if(sd_single_loc){
+    sd2 <- pred_obj$Sig - kx %*% tcrossprod(pred_obj$Ki, kx)
+  }else{
+    sd2 <- rep(diag(pred_obj$Sig),n_locs) - diag(kx %*% tcrossprod(pred_obj$Ki, kx))
+    sd2 <- pmax(sd2, 0)
+  }
+  
     #fast_diagMK_fun(pred_obj$Ki, kx)
-  
-  sd2 <- pmax(sd2, 0)
+  #single location
   
   sd2 <- pred_obj$tau * sd2
   
