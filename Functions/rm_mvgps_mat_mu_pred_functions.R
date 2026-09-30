@@ -1070,7 +1070,8 @@ construct_pred_hom_obj_fun <- function(pars,X, Y_mat, y_bar,
 }
 
 predict_mv_hom_gp_fun <- function(newX,newX_pred = NULL,
-                                  pred_obj, lambda_only = F){
+                                  pred_obj, lambda_only = F,
+                                  sd_mat = F){
   
   if(is.null(dim(newX))) newX <- matrix(newX, nrow=1)
   
@@ -1093,17 +1094,22 @@ predict_mv_hom_gp_fun <- function(newX,newX_pred = NULL,
   nugs <- pred_obj$tau * Lambda
 
   
-  sd2 <- rep(diag(pred_obj$Sig),n_locs) -
-    fast_diagMK_fun(pred_obj$Ki, kx)
-  
-  sd2 <- pmax(sd2, 0)
+  if(sd_mat){
+    sd2 <- pred_obj$Sig - kx %*% tcrossprod(pred_obj$Ki, kx)
+    
+  }else{
+    sd2 <- rep(diag(pred_obj$Sig),n_locs) -
+      fast_diagMK_fun(pred_obj$Ki, kx)
+    
+    sd2 <- pmax(sd2, 0)
+  }
   
   sd2 <- pred_obj$tau * sd2
   
   overall_mean <- drop( newX_pred %*% pred_obj$beta0 +
                           kx %*% pred_obj$KiYB)
   
-  if(pred_obj$rescale_y != "none" ){
+  if(pred_obj$rescale_y != "none"){
     om <- matrix(as.vector(overall_mean), 
                  ncol = pred_obj$n_properties,
                  byrow = T)
@@ -1111,18 +1117,30 @@ predict_mv_hom_gp_fun <- function(newX,newX_pred = NULL,
     
     overall_mean <- as.vector(t(om))
     
-    sd2 <- matrix(as.vector(sd2),
-                  ncol = pred_obj$n_properties,
-                  byrow = T)
-    sd2 <- sd2 %r*% pred_obj$rs_mult^2
-    sd2 <- as.vector(t(sd2))
-
-    
-    nugs <- matrix(as.vector(nugs),
-                   ncol = pred_obj$n_properties,
-                   byrow = T)
-    nugs <- nugs %r*% pred_obj$rs_mult^2
-    nugs <- as.vector(t(nugs))
+    if(sd_mat){
+      mm <- diag(pred_obj$rs_mult)
+      sd2 <- mm %*% sd2 %*% mm
+      
+      nugs <- diag(nugs * pred_obj$rs_mult^2)
+    }else{
+      sd2 <- matrix(as.vector(sd2),
+                    ncol = pred_obj$n_properties,
+                    byrow = T)
+      sd2 <- sd2 %r*% pred_obj$rs_mult^2
+      sd2 <- as.vector(t(sd2))
+      
+      sd2var <- matrix(as.vector(sd2var),
+                       ncol = pred_obj$n_properties,
+                       byrow = T)
+      sd2var <- sd2var %r*% pred_obj$rs_mult^2
+      sd2var <- as.vector(t(sd2var))
+      
+      nugs <- matrix(as.vector(nugs),
+                     ncol = pred_obj$n_properties,
+                     byrow = T)
+      nugs <- nugs %r*% pred_obj$rs_mult^2
+      nugs <- as.vector(t(nugs))
+    }
   }
   
   out <- list(mean = overall_mean,
@@ -1321,7 +1339,8 @@ construct_pred_obj_fun <- function(pars,X,
 }
 
 predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
-                                  pred_obj, lambda_only = F, sd2_only = F){
+                                  pred_obj, lambda_only = F, 
+                                  sd2_only = F, sd_mat = F){
   
   if(is.null(dim(newX))) newX <- matrix(newX, nrow=1)
   
@@ -1338,10 +1357,16 @@ predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
                             theta = pred_obj$theta)
   kx <- kronecker(kx, pred_obj$Sig)
   
-  sd2 <- rep(diag(pred_obj$Sig),n_locs) - diag(kx %*% tcrossprod(pred_obj$Ki, kx))
+  if(sd_mat){
+    sd2 <- pred_obj$Sig - kx %*% tcrossprod(pred_obj$Ki, kx)
+    
+  }else{
+    sd2 <- rep(diag(pred_obj$Sig),n_locs) - diag(kx %*% tcrossprod(pred_obj$Ki, kx))
     #fast_diagMK_fun(pred_obj$Ki, kx)
+    
+    sd2 <- pmax(sd2, 0)
+  }
   
-  sd2 <- pmax(sd2, 0)
   
   sd2 <- pred_obj$tau * sd2
   
@@ -1378,23 +1403,30 @@ predict_mv_het_gp_fun <- function(newX, newX_pred = NULL,
     
     overall_mean <- as.vector(t(om))
     
-    sd2 <- matrix(as.vector(sd2),
-                  ncol = pred_obj$n_properties,
-                  byrow = T)
-    sd2 <- sd2 %r*% pred_obj$rs_mult^2
-    sd2 <- as.vector(t(sd2))
-    
-    sd2var <- matrix(as.vector(sd2var),
-                  ncol = pred_obj$n_properties,
-                  byrow = T)
-    sd2var <- sd2var %r*% pred_obj$rs_mult^2
-    sd2var <- as.vector(t(sd2var))
-    
-    nugs <- matrix(as.vector(nugs),
-                  ncol = pred_obj$n_properties,
-                  byrow = T)
-    nugs <- nugs %r*% pred_obj$rs_mult^2
-    nugs <- as.vector(t(nugs))
+    if(sd_mat){
+      mm <- diag(pred_obj$rs_mult)
+      sd2 <- mm %*% sd2 %*% mm
+      
+      nugs <- diag(nugs * pred_obj$rs_mult^2)
+    }else{
+      sd2 <- matrix(as.vector(sd2),
+                    ncol = pred_obj$n_properties,
+                    byrow = T)
+      sd2 <- sd2 %r*% pred_obj$rs_mult^2
+      sd2 <- as.vector(t(sd2))
+      
+      sd2var <- matrix(as.vector(sd2var),
+                       ncol = pred_obj$n_properties,
+                       byrow = T)
+      sd2var <- sd2var %r*% pred_obj$rs_mult^2
+      sd2var <- as.vector(t(sd2var))
+      
+      nugs <- matrix(as.vector(nugs),
+                     ncol = pred_obj$n_properties,
+                     byrow = T)
+      nugs <- nugs %r*% pred_obj$rs_mult^2
+      nugs <- as.vector(t(nugs))
+    }
   }
   
   out <- list(mean = overall_mean,
