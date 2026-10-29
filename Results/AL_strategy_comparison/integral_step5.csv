@@ -1,0 +1,13 @@
+strategy,Loading,runs,median_integral
+IMSPE,Combined,1,8.413138308701896
+Maximin,Combined,1,8.906539244001603
+Maximum variance,Combined,1,10.037985943812048
+Random,Combined,20,11.780946378368517
+IMSPE,Compression,1,2.0342171885964517
+Maximin,Compression,1,2.246414484960892
+Maximum variance,Compression,1,2.4492977179135966
+Random,Compression,20,2.816048137076124
+IMSPE,Tension,1,6.378921120105444
+Maximin,Tension,1,6.660124759040711
+Maximum variance,Tension,1,7.588688225898451
+Random,Tension,20,8.56895821674592

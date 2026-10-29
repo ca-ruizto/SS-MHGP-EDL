@@ -370,6 +370,7 @@ dat_ss_t_cand <- dat_ss_t_cand%>%
 
 ```{r}
 set.seed(ini_seed)
+# knots for the noise process
 test_pX_bin <- gen.mixture(levels = 3,
                   vars = metals)
     
@@ -402,7 +403,8 @@ test_pXB_ilr <- ilr_bounded_minmax_additive(test_pXB,
                                              epsilon = eps_ilr,
                                              z_min = xx$z_min,
                                              z_max = xx$z_max)$u
-    
+
+# training data    
 n_ed <- length(metals)
 
 y_ini_c <- as.vector(dat_train_c$val_true)

@@ -2522,3 +2522,940 @@ dat_ss_ci%>%
 
 
 
+
+
+
+
+
+#nlpd - full
+
+```{r}
+library(mnormt)
+
+n_responses <- length(properties)
+
+test_compositions <- dat_pred %>%
+  ungroup() %>%
+  arrange(alloy_cnt) %>%
+  mutate(
+    location_id = row_number(),
+    n_elements =
+      (Mo > 0) + (Nb > 0) + (Ta > 0) +
+      (V > 0) + (W > 0),
+    test_set = if_else(
+      n_elements == 2,
+      "Binary interpolation",
+      "Higher-order extrapolation"
+    )
+  )
+
+composition_matrix <- as.matrix(
+  test_compositions[, metals]
+)
+
+test_coordinates <- ilr_bounded_minmax_additive(
+  composition_matrix,
+  epsilon = eps_ilr,
+  z_min = xx$z_min,
+  z_max = xx$z_max
+)$u
+
+mean_basis <- create_poly_basis(
+  composition_matrix,
+  n_out = n_responses,
+  prop_names = properties,
+  sparse_mat = TRUE,
+  degree = 1,
+  omit_last_var = TRUE,
+  var_names = metals
+)
+```
+
+
+
+```{r}
+selected_specifications <- tribble(
+  ~test_set, ~loading, ~mean_type, ~kernel,
+  "Binary interpolation", "Compression", "pol", "m32",
+  "Binary interpolation", "Tension", "int", "m32",
+  "Higher-order extrapolation", "Compression", "pol", "m52",
+  "Higher-order extrapolation", "Tension", "int", "m32"
+)
+
+prediction_design <- tidyr::crossing(
+  test_compositions %>%
+    select(location_id, alloy_cnt, test_set),
+  loading = c("Compression", "Tension"),
+  model = c("Het", "Hom")
+) %>%
+  left_join(
+    selected_specifications,
+    by = c("test_set", "loading")
+  ) %>%
+  mutate(
+    specification = paste(
+      mean_type, kernel, sep = "_"
+    )
+  )
+
+
+fit_specifications <- prediction_design %>%
+  distinct(mean_type, kernel, specification)
+
+saved_models <- list()
+
+for (i in seq_len(nrow(fit_specifications))) {
+  fit_file <- here::here(
+    "Results", "Fixed Data",
+    paste0(
+      "train_bin_rl_prior_gam_",
+      fit_specifications$mean_type[i], "_",
+      fit_specifications$kernel[i],
+      "_2026_05_19_RLV2_iter_0.RData"
+    )
+  )
+
+  stopifnot(file.exists(fit_file))
+
+  fit_environment <- new.env(
+    parent = globalenv()
+  )
+  load(fit_file, envir = fit_environment)
+
+  saved_models[[
+    fit_specifications$specification[i]
+  ]] <- fit_environment$pol
+}
+```
+
+
+```{r}
+predictions_by_composition <- bind_rows(
+  lapply(seq_len(nrow(prediction_design)), function(i) {
+    design_row <- prediction_design[i, ]
+
+    fitted_model_name <- if (
+      design_row$model == "Het"
+    ) {
+      design_row$loading
+    } else {
+      paste0(design_row$loading, "-Hom")
+    }
+
+    fitted_model <- saved_models[[
+      design_row$specification
+    ]][[fitted_model_name]]
+
+    stopifnot(!is.null(fitted_model))
+
+    one_location <- test_coordinates[
+      design_row$location_id, ,
+      drop = FALSE
+    ]
+    stopifnot(nrow(one_location) == 1L)
+
+    one_mean_basis <- NULL
+
+    if (design_row$mean_type == "pol") {
+      basis_rows <- seq.int(
+        (design_row$location_id - 1L) *
+          n_responses + 1L,
+        design_row$location_id * n_responses
+      )
+
+      one_mean_basis <- mean_basis[
+        basis_rows, ,
+        drop = FALSE
+      ]
+    }
+
+    prediction <- if (
+      design_row$model == "Het"
+    ) {
+      predict_mv_het_gp_fun(
+        newX = one_location,
+        newX_pred = one_mean_basis,
+        pred_obj = fitted_model,
+        sd_mat = TRUE
+      )
+    } else {
+      predict_mv_hom_gp_fun(
+        newX = one_location,
+        newX_pred = one_mean_basis,
+        pred_obj = fitted_model,
+        sd_mat = TRUE
+      )
+    }
+
+    predicted_mean <- as.numeric(
+      prediction$mean
+    )
+    latent_covariance <- as.matrix(
+      prediction$sd2
+    )
+
+    nugget_covariance <- if (
+      is.null(dim(prediction$nugs))
+    ) {
+      diag(
+        as.numeric(prediction$nugs),
+        nrow = n_responses
+      )
+    } else {
+      as.matrix(prediction$nugs)
+    }
+
+    predictive_covariance <-
+      latent_covariance + nugget_covariance
+
+    predictive_covariance <-
+      (predictive_covariance +
+         t(predictive_covariance)) / 2
+
+    stopifnot(
+      length(predicted_mean) == n_responses,
+      identical(
+        dim(predictive_covariance),
+        c(n_responses, n_responses)
+      ),
+      all(is.finite(predicted_mean)),
+      all(is.finite(predictive_covariance))
+    )
+
+    tryCatch(
+      chol(predictive_covariance),
+      error = function(e) {
+        stop(
+          "Predictive covariance is not ",
+          "positive definite for ",
+          design_row$model, ", ",
+          design_row$loading, ", alloy ",
+          design_row$alloy_cnt
+        )
+      }
+    )
+
+    cross_covariance <- predictive_covariance
+    diag(cross_covariance) <- 0
+
+    tibble(
+      model = design_row$model,
+      loading = design_row$loading,
+      test_set = design_row$test_set,
+      alloy_cnt = design_row$alloy_cnt,
+      location_id = design_row$location_id,
+      specification =
+        design_row$specification,
+      predicted_mean = list(predicted_mean),
+      predictive_covariance =
+        list(predictive_covariance),
+      largest_cross_covariance =
+        max(abs(cross_covariance))
+    )
+  })
+)
+
+stopifnot(
+  nrow(predictions_by_composition) ==
+    nrow(prediction_design)
+)
+```
+
+
+
+
+```{r}
+observed_curves <- bind_rows(
+  dat_ss_c_all %>%
+    mutate(loading = "Compression"),
+  dat_ss_t_all %>%
+    mutate(loading = "Tension")
+) %>%
+  ungroup() %>%
+  filter(
+    alloy_cnt %in% test_compositions$alloy_cnt
+  ) %>%
+  select(
+    loading, alloy_cnt, alloy_rep_id, rep,
+    all_of(properties)
+  ) %>%
+  mutate(
+    observation_id = row_number()
+  ) %>%
+  left_join(
+    test_compositions %>%
+      select(alloy_cnt, test_set),
+    by = "alloy_cnt"
+  )
+
+stopifnot(
+  !anyNA(observed_curves$test_set),
+  all(complete.cases(
+    observed_curves[, properties]
+  ))
+)
+
+scoring_data <- inner_join(
+  observed_curves,
+  predictions_by_composition,
+  by = c(
+    "loading",
+    "alloy_cnt",
+    "test_set"
+  ),
+  relationship = "many-to-many"
+)
+
+stopifnot(
+  nrow(scoring_data) ==
+    2L * nrow(observed_curves)
+)
+
+scoring_data$joint_NLPD <- vapply(
+  seq_len(nrow(scoring_data)),
+  function(i) {
+    observed_vector <- as.numeric(unlist(
+      scoring_data[i, properties],
+      use.names = FALSE
+    ))
+
+    -mnormt::dmnorm(
+      x = observed_vector,
+      mean =
+        scoring_data$predicted_mean[[i]],
+      varcov =
+        scoring_data$predictive_covariance[[i]],
+      log = TRUE
+    )
+  },
+  numeric(1)
+)
+
+stopifnot(
+  all(is.finite(scoring_data$joint_NLPD))
+)
+
+nlpd_by_observation <- scoring_data %>%
+  select(
+    model, loading, test_set,
+    alloy_cnt, alloy_rep_id, rep,
+    observation_id, specification,
+    joint_NLPD,
+    largest_cross_covariance
+  )
+
+nlpd_summary <- nlpd_by_observation %>%
+  group_by(test_set, loading, model) %>%
+  summarise(
+    observations = n(),
+    compositions = n_distinct(alloy_cnt),
+    mean_NLPD = mean(joint_NLPD),
+    median_NLPD = median(joint_NLPD),
+    largest_cross_covariance =
+      max(largest_cross_covariance),
+    .groups = "drop"
+  )
+
+print(nlpd_summary, n = Inf)
+```
+
+
+
+
+```{r joint_nlpd, fig.width=8, fig.height=6}
+nlpd_plot <- nlpd_by_observation %>%
+  mutate(
+    model = factor(
+      model,
+      levels = c("Het", "Hom")
+    )
+  ) %>%
+  ggplot(
+    aes(
+      x = model,
+      y = joint_NLPD,
+      colour = model
+    )
+  ) +
+  geom_boxplot(
+    width = 0.5,
+    outlier.shape = NA
+  ) +
+  geom_jitter(
+    width = 0.08,
+    alpha = 0.35,
+    size = 0.7
+  ) +
+  scale_colour_brewer(
+    "Model",
+    palette = "Dark2"
+  ) +
+  ggh4x::facet_grid2(
+    test_set ~ loading,
+    scales = "free",
+    independent = "y"
+  ) +
+  labs(
+    x = "Model",
+    y = "Joint NLPD per observed curve"
+  ) +
+  theme(
+    legend.position = "bottom"
+  )
+
+nlpd_plot
+```
+
+```{r}
+output_dir <- paste0(
+  "C:/Users/AbsoluteArm/Desktop/",
+  "New folder (2)"
+)
+
+dir.create(
+  output_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+readr::write_csv(
+  nlpd_by_observation,
+  file.path(
+    output_dir,
+    "NLPD_iteration0_full_covariance_each_observation.csv"
+  )
+)
+
+readr::write_csv(
+  nlpd_summary,
+  file.path(
+    output_dir,
+    "NLPD_iteration0_full_covariance_summary.csv"
+  )
+)
+
+ggsave(
+  filename = file.path(
+    output_dir,
+    "NLPD_iteration0_full_covariance.png"
+  ),
+  plot = nlpd_plot,
+  width = 8,
+  height = 6,
+  dpi = 400
+)
+```
+
+
+
+
+#r1c3
+
+
+```{r}
+revision_dir <- "C:/Users/AbsoluteArm/OneDrive - University of Oklahoma (1)/Metal_proj_c/SS-MHGP-EDL-revision/SS-MHGP-EDL-revision"
+figure_dir <- "C:/Users/AbsoluteArm/Desktop/New folder (2)"
+
+metals <- c("Mo", "Nb", "Ta", "V", "W")
+properties <- c("log_max_strain", paste0("bc_", 1:6))
+
+# Rank compositions by their mean whole-curve RMSE.
+curve_metrics <- readr::read_csv(
+  file.path(revision_dir, "Results", "Revision Tables",
+            "table_03_curve_metrics_by_composition.csv"),
+  show_col_types = FALSE
+)
+
+selected_cases <- curve_metrics %>%
+  filter(
+    region == "whole",
+    (cohort == "binary_test" & loading == "c" &
+       model == "gp_linear_m32_diagonal_het_c") |
+    (cohort == "binary_test" & loading == "t" &
+       model == "gp_constant_m32_diagonal_het_t") |
+    (cohort == "higher_test" & loading == "c" &
+       model == "gp_linear_m52_diagonal_het_c") |
+    (cohort == "higher_test" & loading == "t" &
+       model == "gp_constant_m32_diagonal_het_t")
+  ) %>%
+  group_by(cohort, loading) %>%
+  arrange(RMSE, composition_id, .by_group = TRUE) %>%
+  mutate(
+    rank = row_number(),
+    total = n(),
+    role = case_when(
+      rank == 1 ~ "Best",
+      rank == round(0.50 * (total - 1)) + 1 ~ "Median",
+      rank == round(0.90 * (total - 1)) + 1 ~ "Difficult",
+      rank == total ~ "Worst"
+    )
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(role)) %>%
+  mutate(
+    test_set = if_else(cohort == "binary_test",
+                       "Binary interpolation test",
+                       "Higher-order test"),
+    loading = if_else(loading == "c", "Compression", "Tension"),
+    composition = Composition,
+    composition_key = vapply(
+      strsplit(composition_id, "_", fixed = TRUE),
+      function(x) paste(sprintf("%.4f", as.numeric(x)), collapse = "_"),
+      character(1)
+    )
+  )
+
+panel_order <- as.vector(t(outer(
+  c("Best", "Median", "Difficult", "Worst"),
+  c("Compression", "Tension"),
+  paste, sep = " | "
+)))
+
+selected_cases <- selected_cases %>%
+  mutate(panel = factor(paste(role, loading, sep = " | "),
+                        levels = panel_order))
+
+stopifnot(nrow(selected_cases) == 16L)
+
+# Raw curves, including the observed post-peak drop.
+raw_data <- new.env()
+load(file.path(revision_dir, "ss_data_all_revision.RData"),
+     envir = raw_data)
+
+raw_curves <- raw_data$ss_dat_all %>%
+  mutate(
+    loading = if_else(test_type == "Tension",
+                      "Tension", "Compression"),
+    composition_key = paste(
+      sprintf("%.4f", Mo), sprintf("%.4f", Nb),
+      sprintf("%.4f", Ta), sprintf("%.4f", V),
+      sprintf("%.4f", W), sep = "_"
+    )
+  )
+
+# Predictions used by the supervisor-style curve calculation.
+saved_predictions <- new.env()
+load(here::here("Results", "Predictions_het.RData"),
+     envir = saved_predictions)
+
+prediction_ids <- saved_predictions$dat_pm %>%
+  filter(iter == 5, Kernel == "m52", mean_type == "pol") %>%
+  distinct(Test, id_obs, across(all_of(metals))) %>%
+  mutate(composition_key = paste(
+    sprintf("%.4f", Mo), sprintf("%.4f", Nb),
+    sprintf("%.4f", Ta), sprintf("%.4f", V),
+    sprintf("%.4f", W), sep = "_"
+  ))
+
+selected_cases <- selected_cases %>%
+  left_join(
+    prediction_ids %>% select(Test, id_obs, composition_key),
+    by = c("loading" = "Test", "composition_key")
+  )
+
+stopifnot(!anyNA(selected_cases$id_obs))
+
+predicted_curves <- vector("list", nrow(selected_cases))
+observed_curves <- vector("list", nrow(selected_cases))
+
+for (i in seq_len(nrow(selected_cases))) {
+  mean_row <- saved_predictions$dat_mu %>%
+    filter(
+      iter == 5, Kernel == "m52", mean_type == "pol",
+      Test == selected_cases$loading[i],
+      id == selected_cases$id_obs[i]
+    )
+
+  variance_row <- saved_predictions$dat_var %>%
+    filter(
+      iter == 5, Kernel == "m52", mean_type == "pol",
+      Test == selected_cases$loading[i],
+      id == selected_cases$id_obs[i]
+    )
+
+  observed_case <- raw_curves %>%
+    filter(
+      composition_key == selected_cases$composition_key[i],
+      loading == selected_cases$loading[i]
+    )
+
+  stopifnot(
+    nrow(mean_row) == 1L,
+    nrow(variance_row) == 1L,
+    nrow(observed_case) > 0L
+  )
+
+  peak_strains <- observed_case %>%
+    group_by(rep) %>%
+    summarise(peak = strain[which.max(stress)], .groups = "drop")
+
+  strain_limit <- min(0.15, max(peak_strains$peak) + 0.02)
+
+  test <- predict_ss_curve_sampling_fun(
+    mu_gp = as.matrix(mean_row[, properties[1:5]]),
+    var_gp = as.matrix(variance_row[, properties[1:5]]),
+    n_log_s = 1e3,
+    n_cond_s = 1e3,
+    max_strain = strain_limit,
+    pred_type = "mean"
+  )
+
+  predicted_curves[[i]] <- tibble(
+    test_set = selected_cases$test_set[i],
+    panel = selected_cases$panel[i],
+    strain = test$strain,
+    pred = test$mean[, 1],
+    ub = test$ub[, 1],
+    lb = test$lb[, 1]
+  )
+
+  observed_curves[[i]] <- observed_case %>%
+    filter(strain < strain_limit) %>%
+    mutate(
+      test_set = selected_cases$test_set[i],
+      panel = selected_cases$panel[i]
+    )
+
+  gc(verbose = FALSE)
+}
+
+dat_ss_ci <- bind_rows(predicted_curves)
+dat_sb <- bind_rows(observed_curves)
+
+panel_titles <- selected_cases %>%
+  transmute(
+    test_set,
+    panel,
+    composition = stringr::str_wrap(composition, width = 32)
+  )
+```
+
+
+
+
+```{r bin-all-c, fig.width=9, fig.height=10}
+binary_ss_ci <- dat_ss_ci%>%
+  filter(test_set == "Binary interpolation test")%>%
+  ggplot(aes(x = strain))+
+  geom_ribbon(aes(ymax = ub,
+                  ymin = lb),
+              fill = "blue",
+              alpha = 0.3)+
+  geom_line(aes(y = pred),
+            color = "blue",
+            linewidth = 1.25)+
+  geom_line(aes(x = strain,
+                y = stress,
+                group = rep),
+            data = dat_sb%>%
+              filter(test_set == "Binary interpolation test"),
+            color = "black")+
+  geom_text(aes(x = -Inf,
+                y = Inf,
+                label = composition),
+            data = panel_titles%>%
+              filter(test_set == "Binary interpolation test"),
+            inherit.aes = FALSE,
+            hjust = -0.05,
+            vjust = 1.15,
+            fontface = "bold",
+            size = 3)+
+  facet_wrap(~panel,
+             ncol = 2,
+             scales = "free")+
+  labs(y = TeX("Stress $\\sigma$ (GPa)"),
+       x = TeX("Strain $\\epsilon$"),
+       title = "Predicted SS Curves for Binary Alloys")+
+  theme_bw()
+
+ggsave(file.path(figure_dir, "curves_binary_test_combined.png"),
+       binary_ss_ci, width = 9, height = 10, dpi = 400)
+
+binary_ss_ci
+```
+
+
+
+
+```{r high-all-c, fig.width=9, fig.height=10}
+higher_ss_ci <- dat_ss_ci%>%
+  filter(test_set == "Higher-order test")%>%
+  ggplot(aes(x = strain))+
+  geom_ribbon(aes(ymax = ub,
+                  ymin = lb),
+              fill = "blue",
+              alpha = 0.3)+
+  geom_line(aes(y = pred),
+            color = "blue",
+            linewidth = 1.25)+
+  geom_line(aes(x = strain,
+                y = stress,
+                group = rep),
+            data = dat_sb%>%
+              filter(test_set == "Higher-order test"),
+            color = "black")+
+  geom_text(aes(x = -Inf,
+                y = Inf,
+                label = composition),
+            data = panel_titles%>%
+              filter(test_set == "Higher-order test"),
+            inherit.aes = FALSE,
+            hjust = -0.05,
+            vjust = 1.15,
+            fontface = "bold",
+            size = 3)+
+  facet_wrap(~panel,
+             ncol = 2,
+             scales = "free")+
+  labs(y = TeX("Stress $\\sigma$ (GPa)"),
+       x = TeX("Strain $\\epsilon$"),
+       title = "Predicted SS Curves for Higher-Order Alloys")+
+  theme_bw()
+
+ggsave(file.path(figure_dir, "curves_higher_test_combined.png"),
+       higher_ss_ci, width = 9, height = 10, dpi = 400)
+
+higher_ss_ci
+```
+
+
+
+
+```{r}
+revision_root <- "C:/Users/AbsoluteArm/OneDrive - University of Oklahoma (1)/Metal_proj_c/SS-MHGP-EDL-revision/SS-MHGP-EDL-revision"
+figure_dir <- "C:/Users/AbsoluteArm/Desktop/New folder (2)"
+
+model_choice <- tibble(
+  cohort = c("binary_test", "binary_test", "higher_test", "higher_test"),
+  loading = c("c", "t", "c", "t"),
+  model = c("gp_linear_m32_diagonal_het_c",
+            "gp_constant_m32_diagonal_het_t",
+            "gp_linear_m52_diagonal_het_c",
+            "gp_constant_m32_diagonal_het_t"),
+  Kernel = c("m32", "m32", "m52", "m32"),
+  mean_type = c("pol", "int", "pol", "int")
+)
+
+panel_order <- c("Best | Compression", "Best | Tension",
+                 "Median | Compression", "Median | Tension",
+                 "Difficult | Compression", "Difficult | Tension",
+                 "Worst | Compression", "Worst | Tension")
+
+selected_cases <- readr::read_csv(
+  file.path(revision_root, "Results", "Revision Tables",
+            "table_03_curve_metrics_by_composition.csv"),
+  show_col_types = FALSE
+) %>%
+  filter(region == "whole") %>%
+  inner_join(model_choice,
+             by = c("cohort", "loading", "model")) %>%
+  group_by(cohort, loading) %>%
+  arrange(RMSE, composition_id, .by_group = TRUE) %>%
+  mutate(
+    rank = row_number(),
+    total = n(),
+    role = case_when(
+      rank == 1 ~ "Best",
+      rank == round(0.5 * (total - 1)) + 1 ~ "Median",
+      rank == round(0.9 * (total - 1)) + 1 ~ "Difficult",
+      rank == total ~ "Worst"
+    )
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(role)) %>%
+  mutate(
+    test_set = if_else(cohort == "binary_test",
+                       "Binary interpolation test", "Higher-order test"),
+    loading = if_else(loading == "c", "Compression", "Tension"),
+    composition_key = vapply(
+      strsplit(composition_id, "_"),
+      function(x) paste(sprintf("%.4f", as.numeric(x)), collapse = "_"),
+      character(1)
+    ),
+    panel = factor(paste(role, loading, sep = " | "),
+                   levels = panel_order)
+  )
+
+saved_predictions <- new.env()
+load(here::here("Results", "Predictions_het.RData"),
+     envir = saved_predictions)
+
+prediction_ids <- saved_predictions$dat_pm %>%
+  filter(iter == 0, Kernel == "m32", mean_type == "pol") %>%
+  distinct(Test, id_obs, across(all_of(metals))) %>%
+  mutate(composition_key = paste(
+    sprintf("%.4f", Mo), sprintf("%.4f", Nb),
+    sprintf("%.4f", Ta), sprintf("%.4f", V),
+    sprintf("%.4f", W), sep = "_"
+  )) %>%
+  select(Test, id_obs, composition_key)
+
+selected_cases <- selected_cases %>%
+  left_join(prediction_ids,
+            by = c("loading" = "Test", "composition_key"))
+
+stopifnot(nrow(selected_cases) == 16L,
+          !anyNA(selected_cases$id_obs))
+
+raw_data <- new.env()
+load(file.path(revision_root, "ss_data_all_revision.RData"),
+     envir = raw_data)
+
+raw_curves <- raw_data$ss_dat_all %>%
+  mutate(
+    loading = if_else(test_type == "Tension",
+                      "Tension", "Compression"),
+    composition_key = paste(
+      sprintf("%.4f", Mo), sprintf("%.4f", Nb),
+      sprintf("%.4f", Ta), sprintf("%.4f", V),
+      sprintf("%.4f", W), sep = "_"
+    )
+  )
+
+predicted_curves <- vector("list", nrow(selected_cases))
+observed_curves <- vector("list", nrow(selected_cases))
+
+set.seed(1323)
+
+for (i in seq_len(nrow(selected_cases))) {
+  gp_mu <- saved_predictions$dat_mu %>%
+    filter(iter == 0,
+           Kernel == selected_cases$Kernel[i],
+           mean_type == selected_cases$mean_type[i],
+           Test == selected_cases$loading[i],
+           id == selected_cases$id_obs[i])
+
+  var_gp <- saved_predictions$dat_var %>%
+    filter(iter == 0,
+           Kernel == selected_cases$Kernel[i],
+           mean_type == selected_cases$mean_type[i],
+           Test == selected_cases$loading[i],
+           id == selected_cases$id_obs[i])
+
+  observed_case <- raw_curves %>%
+    filter(composition_key == selected_cases$composition_key[i],
+           loading == selected_cases$loading[i])
+
+  stopifnot(nrow(gp_mu) == 1L,
+            nrow(var_gp) == 1L,
+            nrow(observed_case) > 0L)
+
+  test <- predict_ss_curve_sampling_fun(
+    mu_gp = as.matrix(gp_mu[, properties[1:5]]),
+    var_gp = as.matrix(var_gp[, properties[1:5]]),
+    n_log_s = 1e3,
+    n_cond_s = 1e3,
+    max_strain = 0.12,
+    pred_type = "mean"
+  )
+
+  predicted_curves[[i]] <- tibble(
+    test_set = selected_cases$test_set[i],
+    panel = selected_cases$panel[i],
+    strain = test$strain,
+    pred = test$mean[, 1],
+    ub = test$ub[, 1],
+    lb = test$lb[, 1]
+  )
+
+  observed_curves[[i]] <- observed_case %>%
+    filter(strain <= 0.12) %>%
+    mutate(test_set = selected_cases$test_set[i],
+           panel = selected_cases$panel[i])
+
+  gc(verbose = FALSE)
+}
+
+dat_ss_ci <- bind_rows(predicted_curves)
+dat_sb <- bind_rows(observed_curves)
+
+panel_titles <- selected_cases %>%
+  transmute(test_set, panel,
+            composition = stringr::str_wrap(Composition, width = 32))
+```
+
+
+
+
+```{r x, fig.width=9, fig.height=10}
+binary_ss_figure <- dat_ss_ci%>%
+  filter(test_set == "Binary interpolation test")%>%
+  ggplot(aes(x = strain))+
+  geom_ribbon(aes(ymax = ub,
+                  ymin = lb),
+              fill = "blue",
+              alpha = 0.3)+
+  geom_line(aes(y = pred),
+            color = "blue",
+            linewidth = 1.25)+
+  geom_line(aes(y = stress,
+                group = rep),
+            data = dat_sb%>%
+              filter(test_set == "Binary interpolation test"),
+            color = "black")+
+  geom_text(aes(x = -Inf, y = Inf, label = composition),
+            data = panel_titles%>%
+              filter(test_set == "Binary interpolation test"),
+            inherit.aes = FALSE,
+            hjust = -0.05,
+            vjust = 1.15,
+            fontface = "bold",
+            size = 3)+
+  facet_wrap(~panel,
+             ncol = 2,
+             scales = "free")+
+  labs(y = TeX("Stress $\\sigma$ (GPa)"),
+       x = TeX("Strain $\\epsilon$"),
+       title = "Predicted SS Curves for Binary Alloys")+
+  theme_bw()
+
+ggsave(file.path(figure_dir, "curves_binary_test_combined_iteration0.png"),
+       binary_ss_figure, width = 9, height = 10, dpi = 400)
+
+binary_ss_figure
+```
+
+
+
+
+```{r y, fig.width=9, fig.height=10}
+higher_ss_figure <- dat_ss_ci%>%
+  filter(test_set == "Higher-order test")%>%
+  ggplot(aes(x = strain))+
+  geom_ribbon(aes(ymax = ub,
+                  ymin = lb),
+              fill = "blue",
+              alpha = 0.3)+
+  geom_line(aes(y = pred),
+            color = "blue",
+            linewidth = 1.25)+
+  geom_line(aes(y = stress,
+                group = rep),
+            data = dat_sb%>%
+              filter(test_set == "Higher-order test"),
+            color = "black")+
+  geom_text(aes(x = -Inf, y = Inf, label = composition),
+            data = panel_titles%>%
+              filter(test_set == "Higher-order test"),
+            inherit.aes = FALSE,
+            hjust = -0.05,
+            vjust = 1.15,
+            fontface = "bold",
+            size = 3)+
+  facet_wrap(~panel,
+             ncol = 2,
+             scales = "free")+
+  labs(y = TeX("Stress $\\sigma$ (GPa)"),
+       x = TeX("Strain $\\epsilon$"),
+       title = "Predicted SS Curves for Higher-Order Alloys")+
+  theme_bw()
+
+ggsave(file.path(figure_dir, "curves_higher_test_combined_iteration0.png"),
+       higher_ss_figure, width = 9, height = 10, dpi = 400)
+
+higher_ss_figure
+```
+
+
+
+

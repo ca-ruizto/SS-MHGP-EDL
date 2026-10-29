@@ -1,0 +1,499 @@
+---
+title: "Untitled"
+output: html_document
+date: "2026-09-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+r1c2_het <- new.env()
+r1c2_hom <- new.env()
+
+load(here::here("Results", "Predictions_het.RData"), envir = r1c2_het)
+load(here::here("Results", "Predictions_hom.RData"), envir = r1c2_hom)
+
+r1c2_id <- bind_rows(
+  r1c2_het$dat_pm %>%
+    filter(iter == 0) %>%
+    mutate(Model = "Het"),
+  r1c2_hom$dat_pm_hom %>%
+    filter(iter == 0) %>%
+    mutate(Model = "Hom")
+) %>%
+  mutate(
+    Test = sub("-Hom$", "", Test),
+    elements = (Mo > 0) + (Nb > 0) + (Ta > 0) + (V > 0) + (W > 0),
+    Cohort = if_else(
+      elements == 2,
+      "Binary interpolation",
+      "Higher-order extrapolation"
+    )
+  ) %>%
+  select(Model, Test, Step, Kernel, mean_type,
+         id = id_obs, alloy_cnt, Cohort)
+
+r1c2_pred_order <- dat_pred %>%
+  ungroup() %>%
+  arrange(alloy_cnt) %>%
+  mutate(id = row_number()) %>%
+  select(id, alloy_cnt)
+
+r1c2_check <- r1c2_id %>%
+  filter(Model == "Het", Test == "Compression", Step == "pol_m32") %>%
+  arrange(id)
+
+stopifnot(
+  nrow(r1c2_id) == 1296L,
+  nrow(r1c2_check) == 81L,
+  all(r1c2_check$alloy_cnt == r1c2_pred_order$alloy_cnt),
+  !anyDuplicated(r1c2_id[c("Model", "Test", "Step", "id")])
+)
+
+r1c2_map_check <- r1c2_id %>%
+  group_by(Test, Step, id) %>%
+  summarise(
+    n_alloy = n_distinct(alloy_cnt),
+    n_model = n_distinct(Model),
+    .groups = "drop"
+  )
+
+stopifnot(
+  all(r1c2_map_check$n_alloy == 1L),
+  all(r1c2_map_check$n_model == 2L)
+)
+```
+
+
+
+```{r}
+r1c2_long <- function(dat, model, value_name) {
+  dat %>%
+    filter(iter == 0) %>%
+    mutate(
+      Model = model,
+      Test = sub("-Hom$", "", Test)
+    ) %>%
+    select(Model, Test, Step, Kernel, mean_type,
+           id, all_of(properties)) %>%
+    pivot_longer(
+      cols = all_of(properties),
+      names_to = "property",
+      values_to = value_name
+    )
+}
+
+r1c2_key <- c("Model", "Test", "Step", "Kernel", "mean_type", "id")
+
+r1c2_pred <- r1c2_id %>%
+  inner_join(
+    bind_rows(
+      r1c2_long(r1c2_het$dat_mu, "Het", "mu"),
+      r1c2_long(r1c2_hom$dat_mu_hom, "Hom", "mu")
+    ),
+    by = r1c2_key
+  ) %>%
+  inner_join(
+    bind_rows(
+      r1c2_long(r1c2_het$dat_var, "Het", "variance"),
+      r1c2_long(r1c2_hom$dat_var_hom, "Hom", "variance")
+    ),
+    by = c(r1c2_key, "property")
+  )
+
+stopifnot(
+  nrow(r1c2_pred) == 9072L,
+  all(is.finite(r1c2_pred$mu)),
+  all(is.finite(r1c2_pred$variance) & r1c2_pred$variance > 0)
+)
+
+# Do not use dat_comp here: it averages replicates by composition.
+r1c2_obs <- bind_rows(
+  dat_ss_c_all %>% mutate(Test = "Compression"),
+  dat_ss_t_all %>% mutate(Test = "Tension")
+) %>%
+  filter(alloy_cnt %in% r1c2_id$alloy_cnt) %>%
+  mutate(
+    obs_id = row_number(),
+    elements = (Mo > 0) + (Nb > 0) + (Ta > 0) + (V > 0),
+    Cohort = if_else(
+      elements == 2,
+      "Binary interpolation",
+      "Higher-order extrapolation"
+    )
+  ) %>%
+  select(Test, alloy_cnt, alloy_rep_id, obs_id, rep,
+         Cohort, all_of(properties)) %>%
+  pivot_longer(
+    cols = all_of(properties),
+    names_to = "property",
+    values_to = "observed"
+  )
+
+stopifnot(
+  nrow(r1c2_obs) == 2954L,
+  all(is.finite(r1c2_obs$observed)),
+  !anyDuplicated(
+    r1c2_obs[c("Test", "alloy_cnt", "rep", "property")]
+  )
+)
+
+r1c2_obs %>%
+  distinct(Test, Cohort, obs_id) %>%
+  count(Test, Cohort)
+```
+
+
+```{r}
+r1c2_pred_duplicates <- r1c2_pred %>%
+  count(Test, alloy_cnt, property, Model, Step, name = "n") %>%
+  filter(n != 1L)
+if (nrow(r1c2_pred_duplicates)) {
+  print(r1c2_pred_duplicates, n = Inf)
+  stop("Prediction rows are duplicated for some compositions.")
+}
+
+r1c2_unmatched <- r1c2_obs %>%
+  anti_join(r1c2_pred, by = c("Test", "alloy_cnt", "property"))
+if (nrow(r1c2_unmatched)) {
+  print(r1c2_unmatched %>% count(Test, Cohort, alloy_cnt, property), n = Inf)
+  stop("Some observed curves have no matching prediction.")
+}
+
+r1c2_z <- qnorm(0.975)
+r1c2_scores <- r1c2_obs %>%
+  left_join(
+    r1c2_pred %>% select(-Cohort),
+    by = c("Test", "alloy_cnt", "property"),
+    relationship = "many-to-many"
+  ) %>%
+  mutate(
+    sd = sqrt(variance),
+    lower95 = mu - r1c2_z * sd,
+    upper95 = mu + r1c2_z * sd,
+    covered95 = observed >= lower95 & observed <= upper95,
+    AE = abs(observed - mu),
+    SE = (observed - mu)^2,
+    NLPD = 0.5 * log(2 * pi * variance) + SE / (2 * variance)
+  )
+
+r1c2_match_counts <- r1c2_scores %>%
+  count(obs_id, property, name = "matched_models")
+r1c2_model_count <- r1c2_pred %>% distinct(Model, Step) %>% nrow()
+print(r1c2_match_counts %>% count(matched_models))
+if (any(r1c2_match_counts$matched_models != r1c2_model_count) ||
+    any(!is.finite(r1c2_scores$NLPD))) {
+  print(r1c2_match_counts %>%
+          filter(matched_models != r1c2_model_count), n = Inf)
+  stop("Some observations have missing or duplicated model predictions.")
+}
+
+print(r1c2_obs %>% distinct(Test, Cohort, obs_id) %>% count(Test, Cohort))
+print(r1c2_scores %>% distinct(Test, Cohort, Model, Step, obs_id) %>%
+        count(Test, Cohort, Model, Step), n = Inf)
+
+# Width is a model prediction for a composition, not a replicate score.
+# dat_var already contains the new-replication nugget.
+r1c2_width <- r1c2_scores %>%
+  distinct(Model, Test, Step, Kernel, mean_type, Cohort,
+           alloy_cnt, property, variance) %>%
+  mutate(width95 = 2 * r1c2_z * sqrt(variance)) %>%
+  select(-variance)
+r1c2_width_duplicates <- r1c2_width %>%
+  count(Model, Test, Step, alloy_cnt, property, name = "n") %>%
+  filter(n != 1L)
+if (nrow(r1c2_width_duplicates)) {
+  print(r1c2_width_duplicates, n = Inf)
+  stop("Interval width is not unique by composition and model.")
+}
+
+r1c2_joint <- r1c2_scores %>%
+  group_by(Model, Test, Step, Kernel, mean_type, Cohort,
+           alloy_cnt, alloy_rep_id, obs_id, rep) %>%
+  summarise(joint_NLPD = sum(NLPD),
+            n_outputs = n(), .groups = "drop")
+if (any(r1c2_joint$n_outputs != length(properties))) {
+  stop("A joint score does not contain all seven response components.")
+}
+```
+
+
+```{r}
+r1c2_accuracy <- r1c2_scores %>%
+  group_by(Cohort, Test, Model, Step, Kernel, mean_type, property) %>%
+  summarise(observations = n(), MAE = mean(AE),
+            RMSE = sqrt(mean(SE)), mean_NLPD = mean(NLPD),
+            median_NLPD = median(NLPD),
+            coverage95 = 100 * mean(covered95), .groups = "drop")
+r1c2_sharpness <- r1c2_width %>%
+  group_by(Cohort, Test, Model, Step, Kernel, mean_type, property) %>%
+  summarise(compositions = n(), mean_width95 = mean(width95),
+            median_width95 = median(width95), .groups = "drop")
+r1c2_summary_all <- left_join(
+  r1c2_accuracy, r1c2_sharpness,
+  by = c("Cohort", "Test", "Model", "Step", "Kernel",
+         "mean_type", "property"))
+
+write_csv(r1c2_scores,
+          here::here("Results", "R1C2_each_observation_all_specs.csv"))
+write_csv(r1c2_width,
+          here::here("Results", "R1C2_width_each_composition_all_specs.csv"))
+write_csv(r1c2_summary_all,
+          here::here("Results", "R1C2_Het_Hom_summary_all_specs.csv"))
+
+# Paper-selected mean/kernel setting for each test cohort and loading.
+r1c2_paper <- tribble(
+  ~Cohort, ~Test, ~mean_type, ~Kernel,
+  "Binary interpolation", "Compression", "pol", "m32",
+  "Binary interpolation", "Tension", "int", "m32",
+  "Higher-order extrapolation", "Compression", "pol", "m52",
+  "Higher-order extrapolation", "Tension", "int", "m32"
+)
+r1c2_key <- c("Cohort", "Test", "mean_type", "Kernel")
+r1c2_scores_paper <- inner_join(r1c2_scores, r1c2_paper, by = r1c2_key)
+r1c2_width_paper <- inner_join(r1c2_width, r1c2_paper, by = r1c2_key)
+r1c2_joint_paper <- inner_join(r1c2_joint, r1c2_paper, by = r1c2_key)
+r1c2_summary_paper <- inner_join(r1c2_summary_all, r1c2_paper, by = r1c2_key)
+
+print(r1c2_summary_paper %>%
+        select(Cohort, Test, Model, property, observations, compositions,
+               MAE, RMSE, mean_NLPD, coverage95, mean_width95),
+      n = Inf)
+
+write_csv(r1c2_scores_paper,
+          here::here("Results", "R1C2_each_observation.csv"))
+write_csv(r1c2_width_paper,
+          here::here("Results", "R1C2_width_each_composition.csv"))
+write_csv(r1c2_summary_paper,
+          here::here("Results", "R1C2_Het_Hom_summary.csv"))
+write_csv(r1c2_joint_paper,
+          here::here("Results", "R1C2_joint_NLPD_each_observation.csv"))
+```
+
+
+```{r NLPD, fig.width=8, fig.height=6}
+r1c2_nlpd_plot <- r1c2_joint_paper %>%
+  mutate(Model = factor(Model, levels = c("Het", "Hom"))) %>%
+  ggplot(aes(x = Model, y = joint_NLPD, colour = Model)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA) +
+  geom_jitter(width = 0.08, alpha = 0.35, size = 0.7) +
+  scale_colour_brewer("Model", palette = "Dark2") +
+  ggh4x::facet_grid2(Cohort ~ Test, scales = "free", independent = "y") +
+  labs(x = "Model", y = "Joint NLPD per observed curve") +
+  theme(legend.position = "bottom")
+r1c2_nlpd_plot
+```
+
+```{r}
+ggsave(
+  filename = here::here("Figures", "R1C2_joint_NLPD_iteration0.png"),
+  plot = r1c2_nlpd_plot,
+  width = 8,
+  height = 6,
+  dpi = 400
+)
+```
+
+
+
+
+
+
+
+```{r}
+r1c3_revision_root <- "C:/Users/AbsoluteArm/OneDrive - University of Oklahoma (1)/Metal_proj_c/SS-MHGP-EDL-revision/SS-MHGP-EDL-revision"
+
+r1c3_case_file <- file.path(
+  r1c3_revision_root, "Results", "Revision Tables",
+  "table_03_representative_compositions.csv"
+)
+r1c3_eval_dir <- file.path(
+  r1c3_revision_root, "Results", "Revision Evidence", "evaluation"
+)
+r1c3_output_dir <- here::here("Figures")
+
+# These are the paper-selected HMVGPR configurations for each test set.
+r1c3_models <- tibble::tribble(
+  ~cohort,       ~loading, ~model,
+  "binary_test",  "c",      "gp_linear_m32_diagonal_het_c",
+  "binary_test",  "t",      "gp_constant_m32_diagonal_het_t",
+  "higher_test",  "c",      "gp_linear_m52_diagonal_het_c",
+  "higher_test",  "t",      "gp_constant_m32_diagonal_het_t"
+)
+
+r1c3_band_files <- file.path(
+  r1c3_eval_dir, unique(r1c3_models$model), "curve_bands.csv.gz"
+)
+stopifnot(file.exists(r1c3_case_file), all(file.exists(r1c3_band_files)))
+dir.create(r1c3_output_dir, recursive = TRUE, showWarnings = FALSE)
+
+r1c3_cases <- readr::read_csv(
+  r1c3_case_file, show_col_types = FALSE
+) %>%
+  dplyr::transmute(
+    cohort = dplyr::case_when(
+      `Held-out set` == "Binary interpolation test" ~ "binary_test",
+      `Held-out set` == "Higher-order test" ~ "higher_test",
+      TRUE ~ NA_character_
+    ),
+    loading = dplyr::case_when(
+      Loading == "Compression" ~ "c",
+      Loading == "Tension" ~ "t",
+      TRUE ~ NA_character_
+    ),
+    role = Role,
+    composition = Composition,
+    composition_id = `Composition ID`,
+    rmse = `Mean RMSE (GPa)`
+  ) %>%
+  dplyr::left_join(r1c3_models, by = c("cohort", "loading"))
+
+stopifnot(nrow(r1c3_cases) == 16L, !anyNA(r1c3_cases$model))
+
+r1c3_bands <- dplyr::bind_rows(lapply(
+  r1c3_band_files,
+  function(path) readr::read_csv(
+    path,
+    show_col_types = FALSE,
+    col_types = readr::cols(
+      loading = readr::col_character(),
+      .default = readr::col_guess()
+    )
+  )
+))
+
+r1c3_save_plot <- function(cohort_code, loading_code) {
+  role_order <- c("Best", "Median", "Difficult", "Worst")
+
+  selected <- r1c3_cases %>%
+    dplyr::filter(
+      cohort == cohort_code,
+      loading == loading_code
+    ) %>%
+    dplyr::arrange(match(role, role_order)) %>%
+    dplyr::mutate(
+      panel = paste0(
+        role, ": ", composition,
+        "\nRMSE ", sprintf("%.3f", rmse), " GPa"
+      )
+    )
+
+  stopifnot(
+    nrow(selected) == 4L,
+    identical(selected$role, role_order)
+  )
+
+  plot_data <- r1c3_bands %>%
+    dplyr::inner_join(
+      selected,
+      by = c("model", "loading", "composition_id")
+    )
+
+  stopifnot(dplyr::n_distinct(plot_data$composition_id) == 4L)
+  plot_data$panel <- factor(plot_data$panel, levels = selected$panel)
+
+  # The prediction band is drawn on the longest observed domain.
+  # All available atomistic replications remain visible in black.
+  longest_curve <- plot_data %>%
+    dplyr::distinct(
+      composition_id, panel, curve_id, observed_failure
+    ) %>%
+    dplyr::group_by(composition_id, panel) %>%
+    dplyr::arrange(
+      dplyr::desc(observed_failure), curve_id,
+      .by_group = TRUE
+    ) %>%
+    dplyr::slice_head(n = 1L) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(composition_id, panel, curve_id)
+
+  prediction_data <- plot_data %>%
+    dplyr::semi_join(
+      longest_curve,
+      by = c("composition_id", "panel", "curve_id")
+    )
+
+  cohort_name <- if (cohort_code == "binary_test") {
+    "Binary"
+  } else {
+    "Higher-Order"
+  }
+  loading_name <- if (loading_code == "c") {
+    "Compression"
+  } else {
+    "Tension"
+  }
+
+  p <- ggplot2::ggplot() +
+    ggplot2::geom_ribbon(
+      data = prediction_data,
+      ggplot2::aes(
+        x = strain, ymin = lower95, ymax = upper95,
+        group = panel
+      ),
+      fill = "blue", alpha = 0.30
+    ) +
+    ggplot2::geom_line(
+      data = plot_data,
+      ggplot2::aes(
+        x = strain, y = observed,
+        group = interaction(panel, curve_id)
+      ),
+      color = "black", linewidth = 0.5
+    ) +
+    ggplot2::geom_line(
+      data = prediction_data,
+      ggplot2::aes(
+        x = strain, y = pred_mean, group = panel
+      ),
+      color = "blue", linewidth = 1.25
+    ) +
+    ggplot2::facet_wrap(~panel, nrow = 2, scales = "free") +
+    ggplot2::labs(
+      title = paste(
+        "Predicted SS Curves for", cohort_name,
+        "Alloys under", loading_name
+      ),
+      x = latex2exp::TeX("Strain $\\epsilon$"),
+      y = latex2exp::TeX("Stress $\\sigma$ (GPa)")
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      text = ggplot2::element_text(size = 14),
+      strip.text = ggplot2::element_text(size = 11),
+      legend.position = "none"
+    )
+
+  stem <- paste0(
+    "figure_03_representative_curves_",
+    cohort_code, "_", loading_code
+  )
+
+  ggplot2::ggsave(
+    file.path(r1c3_output_dir, paste0(stem, ".png")),
+    plot = p, width = 8, height = 6,
+    units = "in", dpi = 400, bg = "white"
+  )
+  ggplot2::ggsave(
+    file.path(r1c3_output_dir, paste0(stem, ".pdf")),
+    plot = p, width = 8, height = 6,
+    units = "in", device = "pdf", bg = "white"
+  )
+
+  print(p)
+  invisible(p)
+}
+```
+
+
+
+```{r}
+r1c3_save_plot("higher_test", "t")
+r1c3_save_plot("higher_test", "c")
+r1c3_save_plot("binary_test", "t")
+r1c3_save_plot("binary_test", "c")
+```
+
